@@ -82,7 +82,7 @@ The renderer chooses WebGL with a Canvas fallback. The arena texture is rasteriz
 
 ## Netlify
 
-Connect this repository in Netlify and select the feature branch for a preview (or main after merge). `netlify.toml` sets Node 22, **`npm run build`**, and **`dist`**. No functions, database or environment secrets are needed. This change configures hosting; it does not create a production site or claim a deployed URL.
+Connect this repository in Netlify and select the feature branch for a preview (or main after merge). `netlify.toml` sets Node 22, **`npm run build`**, and **`dist`**. No functions, database or environment secrets are needed. Local Netlify site links and deployment state live in `.netlify/`, which is gitignored. Anonymous CLI previews must be claimed into a Netlify account within one hour to keep them; they are not permanent production hosting until claimed.
 
 ## Validation and remaining work
 
