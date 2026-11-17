@@ -13,6 +13,7 @@ import type {
 /** Pure simulation: seconds, logical portrait coordinates, no browser or rendering dependencies. */
 export class Game {
   state: GameState;
+  bounds = { width: 450, height: 800 };
   private id = 0;
   private listeners = new Set<(event: GameEvent) => void>();
   constructor(
@@ -32,7 +33,7 @@ export class Game {
       xp: 0,
       hp: 100,
       maxHp: 100,
-      player: { x: 225, y: 410 },
+      player: { x: this.bounds.width / 2, y: this.bounds.height * 0.5125 },
       damage: 22,
       fireRate: 0.55,
       shootTimer: 0,
@@ -68,9 +69,36 @@ export class Game {
   private sound(sound: Extract<GameEvent, { type: 'sound' }>['sound']) {
     this.emit({ type: 'sound', sound });
   }
-  start() {
+  setBounds(width: number, height: number) {
+    if (!Number.isFinite(width) || !Number.isFinite(height) || width < 200 || height < 200) return;
+    const sx = width / this.bounds.width,
+      sy = height / this.bounds.height;
+    for (const p of [
+      this.state.player,
+      ...this.state.enemies,
+      ...this.state.shots,
+      ...this.state.particles,
+      ...this.state.rings,
+      ...this.state.texts,
+      ...this.state.hazards,
+    ]) {
+      p.x *= sx;
+      p.y *= sy;
+    }
+    this.bounds = { width, height };
+  }
+  start(quickStart = false) {
     this.state = this.initial(this.state.best);
     this.state.status = 'running';
+    if (quickStart) {
+      for (let i = 0; i < 6; i++) {
+        const e = this.spawn(i === 2 || i === 4 ? 'skeleton' : 'imp');
+        const angle = (i * Math.PI) / 3 + 0.4;
+        e.x = this.state.player.x + Math.cos(angle) * Math.min(320, this.bounds.width * 0.35);
+        e.y = this.state.player.y + Math.sin(angle) * 180;
+        this.state.spawnRemaining--;
+      }
+    }
     this.sound('wave');
   }
   pause() {
@@ -106,8 +134,18 @@ export class Game {
   spawn(kind?: EnemyKind): Enemy {
     const s = this.state,
       side = Math.floor(this.random() * 4);
-    const x = side === 0 ? 25 : side === 1 ? 425 : 45 + this.random() * 360;
-    const y = side === 2 ? 130 : side === 3 ? 640 : 150 + this.random() * 460;
+    const x =
+      side === 0
+        ? 25
+        : side === 1
+          ? this.bounds.width - 25
+          : 45 + this.random() * (this.bounds.width - 90);
+    const y =
+      side === 2
+        ? 95
+        : side === 3
+          ? this.bounds.height - 105
+          : 110 + this.random() * (this.bounds.height - 220);
     kind ??=
       s.wave < 2
         ? 'imp'
@@ -137,8 +175,8 @@ export class Game {
   summonBoss() {
     if (this.state.enemies.some((e) => e.kind === 'boss')) return false;
     const e = this.spawn('boss');
-    e.x = 225;
-    e.y = 180;
+    e.x = this.bounds.width / 2;
+    e.y = 145;
     this.burst(e, '#d99fdd', 40);
     this.sound('boss');
     this.emit({ type: 'boss' });
@@ -154,6 +192,7 @@ export class Game {
       s.hazards = [];
       s.shots = s.shots.filter((shot) => !shot.hostile);
       this.ring(s.player, '#a2e5ff', 230);
+      this.emit({ type: 'spell', effect: 'frost', targets: [] });
       this.sound('frost');
     }
     if (skill === 'lightning') {
@@ -189,6 +228,7 @@ export class Game {
     if (kind === 'ice') {
       s.freeze = Math.max(s.freeze, 5);
       this.ring(s.player, '#a2e5ff', 420);
+      this.emit({ type: 'spell', effect: 'frost', targets: [] });
       this.sound('frost');
     }
     if (kind === 'meteor') {
@@ -211,6 +251,7 @@ export class Game {
   }
   private nova(radius: number, damage: number) {
     const s = this.state;
+    this.emit({ type: 'spell', effect: 'nova', targets: [] });
     this.ring(s.player, '#ffbd76', radius);
     this.burst(s.player, '#ffbd76', 45);
     s.shake = 5;
@@ -244,6 +285,7 @@ export class Game {
   damageEnemy(e: Enemy, damage: number) {
     if (e.hp <= 0) return;
     e.hp -= damage;
+    this.emit({ type: 'impact', id: e.id, at: { x: e.x, y: e.y }, lethal: e.hp <= 0 });
     e.hit = 0.15;
     this.float(e, String(Math.round(damage)), '#f6e6b6');
     if (e.hp > 0) {
@@ -280,7 +322,7 @@ export class Game {
       this.emit({ type: 'defeat', score: s.score });
     }
   }
-  update(dt: number) {
+  update(dt: number, externalCollisions = this.externalCollisions) {
     const s = this.state;
     if (s.status !== 'running' || dt <= 0 || !Number.isFinite(dt)) return;
     dt = Math.min(dt, 0.05);
@@ -325,7 +367,7 @@ export class Game {
       if (distance > e.radius + 12) {
         e.x += Math.cos(angle) * e.speed * dt;
         e.y += Math.sin(angle) * e.speed * dt;
-      } else if (!this.externalCollisions) this.hurt(e.kind === 'boss' ? 22 : 10);
+      } else if (!externalCollisions) this.hurt(e.kind === 'boss' ? 22 : 10);
       if (e.kind === 'boss') {
         e.attack -= dt;
         if (e.attack <= 0) {
@@ -350,7 +392,7 @@ export class Game {
       shot.x += shot.vx * dt;
       shot.y += shot.vy * dt;
       shot.life -= dt;
-      if (this.externalCollisions) continue;
+      if (externalCollisions) continue;
       if (shot.hostile) {
         if (Math.hypot(shot.x - s.player.x, shot.y - s.player.y) < 17) {
           this.hurt(shot.damage);

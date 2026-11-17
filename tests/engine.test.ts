@@ -15,6 +15,18 @@ const makeGame = () => {
 };
 
 describe('crystal defense rules', () => {
+  it('opens with immediate combat and preserves the wave budget across responsive resize', () => {
+    const game = makeGame();
+    game.setBounds(1200, 800);
+    game.start(true);
+    expect(game.state.player.x).toBe(600);
+    expect(game.state.enemies).toHaveLength(6);
+    expect(game.state.enemies.length + game.state.spawnRemaining).toBe(game.state.waveTotal);
+    const x = game.state.enemies[0].x;
+    game.setBounds(360, 800);
+    expect(game.state.player.x).toBe(180);
+    expect(game.state.enemies[0].x).toBeCloseTo(x * 0.3);
+  });
   it('spawns moving enemies and automatic projectiles, awards kills and experience', () => {
     const game = makeGame();
     advance(game, 20);

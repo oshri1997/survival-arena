@@ -8,6 +8,7 @@ export type Sound =
   'shot' | 'hit' | 'kill' | 'nova' | 'frost' | 'gift' | 'boss' | 'wave' | 'lightning' | 'defeat';
 export interface Enemy extends Vec {
   id: number;
+  viewerName?: string;
   kind: EnemyKind;
   hp: number;
   maxHp: number;
@@ -80,7 +81,8 @@ export interface GameState {
   best: number;
 }
 export type GameEvent =
-  | { type: 'spell'; effect: 'lightning' | 'meteor'; targets: Vec[] }
+  | { type: 'spell'; effect: 'lightning' | 'meteor' | 'nova' | 'frost'; targets: Vec[] }
+  | { type: 'impact'; id: number; at: Vec; lethal: boolean }
   | { type: 'sound'; sound: Sound }
   | { type: 'wave'; wave: number }
   | { type: 'boss' }
