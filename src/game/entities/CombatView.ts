@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import type { Game } from '../engine';
 import type { Enemy, Projectile } from '../types';
+import { CRYSTAL_RADIUS } from '../config';
 
 /** Owns Phaser bodies. Arcade overlap callbacks are the browser combat collision authority. */
 export class CombatView {
@@ -14,7 +15,9 @@ export class CombatView {
     private game: Game,
   ) {
     this.crystal = scene.physics.add.image(225, 410, 'spark').setVisible(false);
-    this.crystal.body!.setCircle(21, -5, -5);
+    const body = this.crystal.body as Phaser.Physics.Arcade.Body;
+    body.setCircle(CRYSTAL_RADIUS, 16 - CRYSTAL_RADIUS, 16 - CRYSTAL_RADIUS);
+    body.moves = false;
     this.crystal.setImmovable(true);
   }
   sync() {
@@ -28,12 +31,15 @@ export class CombatView {
     for (const e of s.enemies) {
       let sprite = this.enemies.get(e.id);
       if (!sprite) {
-        const scale = e.kind === 'boss' ? 1.12 : e.kind === 'wraith' ? 0.8 : 0.76;
+        const scale = e.kind === 'boss' ? 1.7 : e.kind === 'wraith' ? 1.15 : 1.12;
         sprite = this.scene.physics.add
           .sprite(e.x, e.y, e.kind)
           .setScale(scale)
           .setOrigin(0.5, 0.7);
-        sprite.body?.setCircle(e.radius / scale, 48 - e.radius / scale, 67 - e.radius / scale);
+        const body = sprite.body as Phaser.Physics.Arcade.Body;
+        body.setCircle(e.radius / scale, 48 - e.radius / scale, 67.2 - e.radius / scale);
+        // Rules own position. Arcade calculates overlaps without moving the sprite afterward.
+        body.moves = false;
         sprite.play(`${e.kind}-walk`);
         this.enemies.set(e.id, sprite);
         this.enemyModels.set(sprite, e);
@@ -43,14 +49,14 @@ export class CombatView {
         }
       }
       const body = sprite.body as Phaser.Physics.Arcade.Body;
-      body.reset(e.x, e.y);
-      // reset() places the body at sprite top-left; reapply the scaled circle offset before overlap.
+      sprite.setPosition(e.x, e.y);
       body.updateFromGameObject();
-      sprite.setDepth(e.y).setFlipX(e.x > 225);
+      sprite.setDepth(e.y).setFlipX(e.x > s.player.x);
       if (e.hit > 0) sprite.setTintFill(0xe9fff1);
       else if (s.freeze > 0) sprite.setTint(0x8bdef5);
+      else if (e.enraged) sprite.setTint(0xff8eaa);
       else sprite.clearTint();
-      if (s.freeze > 0 || s.status !== 'running') sprite.anims.pause();
+      if (s.freeze > 0 || e.windup > 0 || s.status !== 'running') sprite.anims.pause();
       else sprite.anims.resume();
     }
     for (const [shot, sprite] of this.shots)
@@ -64,16 +70,19 @@ export class CombatView {
       let sprite = this.shots.get(shot);
       if (!sprite) {
         sprite = this.scene.physics.add
-          .image(shot.x, shot.y, 'spark')
-          .setScale(shot.hostile ? 0.8 : 0.65)
+          .image(shot.x, shot.y, 'bolt')
+          .setScale(shot.hostile ? 0.65 : 0.55)
+          .setRotation(Math.atan2(shot.vy, shot.vx) - Math.PI / 2)
           .setBlendMode(Phaser.BlendModes.ADD)
           .setTint(shot.hostile ? 0xe8a1f3 : 0xa5ffcf)
           .setDepth(900);
-        sprite.body!.setCircle(8, 8, 8);
+        const body = sprite.body as Phaser.Physics.Arcade.Body;
+        body.setCircle(8, 4, 24);
+        body.moves = false;
         this.shots.set(shot, sprite);
         this.shotModels.set(sprite, shot);
       }
-      sprite.body!.reset(shot.x, shot.y);
+      sprite.setPosition(shot.x, shot.y);
       sprite.body!.updateFromGameObject();
     }
   }
@@ -90,8 +99,8 @@ export class CombatView {
     });
     this.scene.physics.overlap(this.crystal, enemySprites, (_a, b) => {
       const enemy = this.enemyModels.get(b as Phaser.GameObjects.GameObject);
-      if (enemy && enemy.hp > 0 && this.game.state.freeze <= 0)
-        this.game.hurt(enemy.kind === 'boss' ? 22 : 10);
+      if (enemy && enemy.hp > 0 && enemy.windup === 0 && this.game.state.freeze <= 0)
+        this.game.hurt(enemy.kind === 'boss' ? 17 : 10, enemy.id);
     });
     this.scene.physics.overlap(this.crystal, [...this.shots.values()], (_a, b) => {
       const shot = this.shotModels.get(b as Phaser.GameObjects.GameObject);
@@ -99,6 +108,46 @@ export class CombatView {
         this.game.hurt(shot.damage);
         shot.life = 0;
       }
+    });
+  }
+  impact(id: number, lethal: boolean) {
+    const sprite = this.enemies.get(id);
+    if (!sprite || !lethal) return;
+    const ghost = this.scene.add
+      .image(sprite.x, sprite.y, sprite.texture.key, sprite.frame.name)
+      .setOrigin(0.5, 0.7)
+      .setScale(sprite.scaleX)
+      .setTint(0xffefc2)
+      .setDepth(sprite.depth + 1);
+    this.scene.tweens.add({
+      targets: ghost,
+      alpha: 0,
+      scaleX: sprite.scaleX * 1.3,
+      scaleY: sprite.scaleY * 1.3,
+      y: sprite.y - 18,
+      angle: 15,
+      duration: 240,
+      onComplete: () => ghost.destroy(),
+    });
+  }
+  attack(id?: number) {
+    const sprite = id === undefined ? undefined : this.enemies.get(id);
+    if (!sprite) return;
+    const crystal = this.game.state.player;
+    const swipe = this.scene.add
+      .image(sprite.x, sprite.y - 15, 'impact')
+      .setScale(0.45)
+      .setDepth(960)
+      .setTint(0xff885e);
+    this.scene.tweens.add({
+      targets: swipe,
+      x: crystal.x,
+      y: crystal.y - 22,
+      angle: 35,
+      scale: 0.9,
+      alpha: 0,
+      duration: 170,
+      onComplete: () => swipe.destroy(),
     });
   }
   destroy() {

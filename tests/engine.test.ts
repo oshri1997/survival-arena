@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Game } from '../src/game/engine';
-import { COOLDOWNS } from '../src/game/config';
+import { COOLDOWNS, METEOR_FLIGHT } from '../src/game/config';
 const advance = (game: Game, seconds: number) => {
   for (let i = 0; i < seconds * 60; i++) game.update(1 / 60);
 };
@@ -15,6 +15,18 @@ const makeGame = () => {
 };
 
 describe('crystal defense rules', () => {
+  it('opens with immediate combat and preserves the wave budget across responsive resize', () => {
+    const game = makeGame();
+    game.setBounds(1200, 800);
+    game.start(true);
+    expect(game.state.player.x).toBe(600);
+    expect(game.state.enemies).toHaveLength(6);
+    expect(game.state.enemies.length + game.state.spawnRemaining).toBe(game.state.waveTotal);
+    const x = game.state.enemies[0].x;
+    game.setBounds(360, 800);
+    expect(game.state.player.x).toBe(180);
+    expect(game.state.enemies[0].x).toBeCloseTo(x * 0.3);
+  });
   it('spawns moving enemies and automatic projectiles, awards kills and experience', () => {
     const game = makeGame();
     advance(game, 20);
@@ -111,26 +123,52 @@ describe('crystal defense rules', () => {
     game.state.invulnerable = 100;
     boss.hp = boss.maxHp * 0.4;
     advance(game, 4);
-    expect(
-      game.state.hazards.length + game.state.shots.filter((s) => s.hostile).length,
-    ).toBeGreaterThan(0);
+    expect(boss.windup).toBeGreaterThan(0);
   });
-  it('implements all four mock gift effects with capped healing', () => {
+  it('honors actual healing and keeps the original boss attribution on repeated crowns', () => {
     const game = makeGame();
     game.state.hp = 50;
-    game.gift('rose');
+    expect(game.gift('rose')).toEqual({ kind: 'rose', healed: 25 });
     expect(game.state.hp).toBe(75);
-    game.gift('rose');
-    game.gift('rose');
+    expect(game.gift('rose')).toEqual({ kind: 'rose', healed: 25 });
+    expect(game.gift('rose')).toEqual({ kind: 'rose', healed: 0 });
     expect(game.state.hp).toBe(100);
     game.gift('ice');
     expect(game.state.freeze).toBe(5);
-    const enemy = game.spawn('skeleton');
-    game.gift('meteor');
-    expect(enemy.hp).toBeLessThanOrEqual(0);
-    game.gift('crown');
-    expect(game.state.enemies[0].kind).toBe('boss');
+    expect(game.gift('crown', 'Luna')).toEqual({ kind: 'crown' });
+    expect(game.gift('crown', 'Kai')).toEqual({ kind: 'crown-support', healed: 0 });
+    expect(game.state.enemies.filter((e) => e.kind === 'boss').map((e) => e.viewerName)).toEqual([
+      'Luna',
+    ]);
     expect(game.state.gifts).toBe(6);
+  });
+  it('damages enemies at meteor impact and allows only one meteor in flight', () => {
+    const game = makeGame();
+    game.state.damage = 0;
+    const enemy = game.spawn('skeleton');
+    expect(game.gift('meteor')).toEqual({ kind: 'meteor' });
+    expect(game.gift('meteor')).toBe(false);
+    advance(game, METEOR_FLIGHT - 0.1);
+    expect(enemy.hp).toBe(enemy.maxHp);
+    advance(game, 0.2);
+    expect(enemy.hp).toBeLessThanOrEqual(0);
+    expect(game.state.meteor).toBe(0);
+  });
+  it('gives the boss a visible windup that frost can interrupt, then resumes after thaw', () => {
+    const game = makeGame();
+    game.state.spawnRemaining = 0;
+    game.summonBoss();
+    const boss = game.state.enemies[0];
+    boss.attack = 0.1;
+    advance(game, 0.5);
+    expect(boss.windup).toBeGreaterThan(0);
+    expect(game.state.hp).toBe(100);
+    expect(game.gift('ice')).toEqual({ kind: 'ice', interrupted: true });
+    expect(boss.windup).toBe(0);
+    advance(game, 2);
+    expect(game.state.hp).toBe(100);
+    advance(game, 7.5);
+    expect(game.state.hp).toBeLessThan(100);
   });
   it('clamps large frame deltas, ignores invalid time and bounds visual particle memory', () => {
     const game = makeGame();

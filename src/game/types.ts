@@ -8,6 +8,7 @@ export type Sound =
   'shot' | 'hit' | 'kill' | 'nova' | 'frost' | 'gift' | 'boss' | 'wave' | 'lightning' | 'defeat';
 export interface Enemy extends Vec {
   id: number;
+  viewerName?: string;
   kind: EnemyKind;
   hp: number;
   maxHp: number;
@@ -16,6 +17,9 @@ export interface Enemy extends Vec {
   phase: number;
   hit: number;
   attack: number;
+  windup: number;
+  windupDuration: number;
+  enraged: boolean;
 }
 export interface Projectile extends Vec {
   vx: number;
@@ -43,10 +47,6 @@ export interface FloatText extends Vec {
   color: string;
   life: number;
 }
-export interface Hazard extends Vec {
-  radius: number;
-  remaining: number;
-}
 export interface GameState {
   status: Status;
   wave: number;
@@ -70,7 +70,7 @@ export interface GameState {
   particles: Particle[];
   rings: Ring[];
   texts: FloatText[];
-  hazards: Hazard[];
+  meteor: number;
   spawnRemaining: number;
   waveTotal: number;
   waveKilled: number;
@@ -80,8 +80,18 @@ export interface GameState {
   best: number;
 }
 export type GameEvent =
-  | { type: 'spell'; effect: 'lightning' | 'meteor'; targets: Vec[] }
+  | { type: 'spell'; effect: 'lightning' | 'nova' | 'frost'; targets: Vec[] }
+  | { type: 'meteor-landed'; at: Vec }
+  | { type: 'heal'; at: Vec; amount: number }
+  | { type: 'spawn'; at: Vec; kind: EnemyKind }
+  | { type: 'crystal-hit'; attackerId?: number }
+  | { type: 'impact'; id: number; at: Vec; lethal: boolean }
   | { type: 'sound'; sound: Sound }
   | { type: 'wave'; wave: number }
   | { type: 'boss' }
+  | { type: 'boss-phase' | 'boss-interrupted' | 'boss-defeated' | 'boss-strike'; at: Vec }
   | { type: 'defeat'; score: number };
+export type GiftResult =
+  | { kind: 'rose' | 'crown-support'; healed: number }
+  | { kind: 'ice'; interrupted: boolean }
+  | { kind: 'meteor' | 'crown' };

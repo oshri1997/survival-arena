@@ -1,13 +1,12 @@
 import { Game } from '../game/engine';
-import { COOLDOWNS, GIFTS } from '../game/config';
+import { GIFTS, LIKES_PER_STRIKE } from '../game/config';
 import type { GiftKind, Skill, Upgrade } from '../game/types';
 import type { LiveEvent } from '../integrations/events/types';
 import { MockProvider } from '../integrations/mock/MockProvider';
+import { SessionBus, type Command } from '../integrations/local/SessionBus';
 import { Sound } from '../audio/Sound';
 import { icon } from './icons';
 const el = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
-const formatTime = (time: number) =>
-  `${String(Math.floor(time / 60)).padStart(2, '0')}:${String(Math.floor(time % 60)).padStart(2, '0')}`;
 export const readBest = () => {
   try {
     const value = Number(localStorage.getItem('survival-arena-best'));
@@ -17,304 +16,252 @@ export const readBest = () => {
   }
 };
 
+/** Minimal audience UI. The full control surface lives in admin.html. */
 export class Controller {
-  private lastStatus = 'ready';
-  private feedCount = 0;
-  private viewers = new Set<string>();
-  private likes = 0;
-  private gifts = 0;
-  private toastTimer?: ReturnType<typeof setTimeout>;
-  private bossTimer?: ReturnType<typeof setTimeout>;
-  private interval: ReturnType<typeof setInterval>;
-  private unsubs: (() => void)[] = [];
-  private resumeAfterHelp = false;
   readonly sound = new Sound();
   readonly mock: MockProvider;
-  constructor(readonly game: Game) {
-    this.mock = new MockProvider(() => this.game.state.status === 'running' && !document.hidden);
-    el('personal-best').innerHTML = `${game.state.best.toLocaleString()} <span>PTS</span>`;
-    this.bind();
-    this.interval = setInterval(() => this.render(), 80);
+  private interval: ReturnType<typeof setInterval>;
+  private unsubs: (() => void)[] = [];
+  private toastUntil = 0;
+  private momentUntil = 0;
+  private statusSince = 0;
+  private lastStatus = 'ready';
+  private lastPublish = 0;
+  private likes = 0;
+  private chargedBy?: LiveEvent;
+  private abort = new AbortController();
+  constructor(
+    readonly game: Game,
+    private bus: SessionBus,
+  ) {
+    this.mock = new MockProvider(() => game.state.status === 'running');
+    this.mock.subscribe((event) => this.handleEvent(event));
+    this.unsubs.push(
+      bus.on((message) => {
+        if (message.type === 'command') this.command(message.command);
+      }),
+    );
     this.unsubs.push(
       game.on((event) => {
         if (event.type === 'sound') this.sound.play(event.sound);
-        if (event.type === 'boss') {
-          el('boss-announcement').hidden = false;
-          clearTimeout(this.bossTimer);
-          this.bossTimer = setTimeout(() => {
-            el('boss-announcement').hidden = true;
-          }, 3000);
-        }
-        if (event.type === 'defeat') {
+        if (event.type === 'boss') this.moment('BOSS!');
+        if (event.type === 'boss-phase') this.moment('ENRAGED!');
+        if (event.type === 'boss-interrupted') this.moment('ATTACK STOPPED');
+        if (event.type === 'boss-defeated') this.moment('BOSS DOWN!');
+        if (event.type === 'defeat')
           try {
             localStorage.setItem('survival-arena-best', String(game.state.best));
           } catch {
             /* Optional persistence. */
           }
-          el('personal-best').innerHTML = `${game.state.best.toLocaleString()} <span>PTS</span>`;
-        }
-      }),
-      this.mock.subscribe((event) => this.handleEvent(event)),
-    );
-    document.addEventListener('visibilitychange', () => {
-      if (document.hidden) {
-        game.pause();
-        this.sound.suspend();
-      }
-    });
-    window.addEventListener('pagehide', () => this.mock.stop());
-  }
-  ready() {
-    const start = el<HTMLButtonElement>('start');
-    start.disabled = false;
-    start.innerHTML = `Enter the arena ${icon('arrow')}`;
-  }
-  private begin() {
-    this.sound.unlock();
-    this.game.start();
-    this.viewers.clear();
-    this.likes = 0;
-    this.gifts = 0;
-    this.feedCount = 0;
-    el('activity-feed').innerHTML =
-      '<li class="feed-empty"><span>Your run is LIVE.<small>Send a mock event to join the story.</small></span></li>';
-    for (const id of ['viewers', 'likes', 'gift-count']) el(id).textContent = '0';
-    el('event-count').textContent = '0 EVENTS';
-    el('boss-announcement').hidden = true;
-    el('gift-toast').hidden = true;
-    clearTimeout(this.bossTimer);
-    clearTimeout(this.toastTimer);
-    this.render();
-  }
-  private bind() {
-    el('start').addEventListener('click', () => this.begin());
-    el('pause').addEventListener('click', () => {
-      this.game.pause();
-      this.render();
-    });
-    el('sound').addEventListener('click', () => {
-      const muted = this.sound.toggle();
-      el('sound').innerHTML = icon(muted ? 'muted' : 'sound');
-      el('sound').setAttribute('aria-label', muted ? 'Enable sound' : 'Mute sound');
-    });
-    document.querySelectorAll<HTMLButtonElement>('[data-skill]').forEach((button) =>
-      button.addEventListener('click', () => {
-        this.sound.unlock();
-        this.game.skill(button.dataset.skill as Skill);
-        this.render();
       }),
     );
     document.querySelectorAll<HTMLButtonElement>('[data-gift]').forEach((button) =>
-      button.addEventListener('click', () => {
-        this.sound.unlock();
-        this.mock.send('GiftReceived', { gift: button.dataset.gift as GiftKind });
-        this.render();
-      }),
+      button.addEventListener(
+        'click',
+        () => {
+          this.sound.unlock();
+          this.mock.send('GiftReceived', { gift: button.dataset.gift as GiftKind });
+        },
+        { signal: this.abort.signal },
+      ),
     );
-    el('auto-events').addEventListener('click', () => {
-      const enabled = el('auto-events').getAttribute('aria-checked') !== 'true';
-      el('auto-events').setAttribute('aria-checked', String(enabled));
-      if (enabled) this.mock.start();
-      else this.mock.stop();
+    el('retry').addEventListener('click', () => this.begin(), { signal: this.abort.signal });
+    document.addEventListener('pointerdown', () => this.sound.unlock(), {
+      once: true,
+      signal: this.abort.signal,
     });
-    el('send-event').addEventListener('click', () => {
-      this.mock.send(el<HTMLSelectElement>('event-type').value as LiveEvent['type'], {
-        message: el<HTMLInputElement>('chat-message').value || undefined,
-      });
-    });
-    el('crowd').addEventListener('click', () => this.mock.crowd());
-    document.querySelectorAll<HTMLButtonElement>('[data-action]').forEach((button) =>
-      button.addEventListener('click', () => {
-        switch (button.dataset.action) {
-          case 'help':
-            this.resumeAfterHelp = this.game.state.status === 'running';
-            this.game.pause();
-            el<HTMLDialogElement>('help-dialog').showModal();
-            break;
-          case 'close-help':
-            el<HTMLDialogElement>('help-dialog').close();
-            break;
-          case 'studio':
-            el('studio-panel').classList.add('open');
-            break;
-          case 'close-studio':
-            el('studio-panel').classList.remove('open');
-            el<HTMLButtonElement>('pause').focus();
-            break;
+    document.addEventListener(
+      'keydown',
+      (event) => {
+        if (
+          event.repeat ||
+          (event.target instanceof HTMLElement &&
+            /INPUT|SELECT|TEXTAREA/.test(event.target.tagName))
+        )
+          return;
+        const key = event.key.toLowerCase();
+        const skill = ({ q: 'nova', w: 'frost', e: 'lightning' } as Record<string, Skill>)[key];
+        if (skill) {
+          event.preventDefault();
+          this.sound.unlock();
+          game.skill(skill);
         }
-        this.render();
-      }),
+        if (key === 'p') game.state.status === 'running' ? game.pause() : game.resume();
+      },
+      { signal: this.abort.signal },
     );
-    el('help-dialog').addEventListener('close', () => {
-      if (this.resumeAfterHelp) this.game.resume();
-      this.resumeAfterHelp = false;
-      this.render();
-    });
-    el('overlay-card').addEventListener('click', (event) => {
-      const button = (event.target as HTMLElement).closest<HTMLButtonElement>('button');
-      if (!button) return;
-      if (button.dataset.action === 'resume') {
-        this.sound.unlock();
+    this.interval = setInterval(() => this.render(), 80);
+  }
+  ready() {
+    this.begin();
+  }
+  private begin() {
+    this.game.start(true);
+    this.likes = 0;
+    this.chargedBy = undefined;
+    el('gift-toast').hidden = true;
+    el('run-state').hidden = true;
+    this.moment('DEFEND THE CRYSTAL', 1500);
+    this.render();
+  }
+  private command(command: Command) {
+    switch (command.kind) {
+      case 'pause':
+        this.game.pause();
+        break;
+      case 'resume':
         this.game.resume();
-      }
-      if (button.dataset.action === 'restart') this.begin();
-      if (button.dataset.upgrade) this.game.upgrade(button.dataset.upgrade as Upgrade);
-      this.render();
-    });
-    document.addEventListener('keydown', (event) => {
-      if (
-        event.repeat ||
-        (event.target instanceof HTMLElement &&
-          /INPUT|SELECT|TEXTAREA/.test(event.target.tagName)) ||
-        el<HTMLDialogElement>('help-dialog').open
-      )
-        return;
-      const key = event.key.toLowerCase();
-      if (['q', 'w', 'e', 'p'].includes(key)) event.preventDefault();
-      if (key === 'p') {
-        this.game.state.status === 'running' ? this.game.pause() : this.game.resume();
-      }
-      const skill = ({ q: 'nova', w: 'frost', e: 'lightning' } as Record<string, Skill>)[key];
-      if (skill) {
-        this.sound.unlock();
-        this.game.skill(skill);
-      }
-      this.render();
-    });
-  }
-  private toast(title: string, subtitle: string) {
-    const box = el('gift-toast');
-    box.replaceChildren();
-    const strong = document.createElement('b'),
-      small = document.createElement('small');
-    strong.textContent = title;
-    small.textContent = subtitle;
-    box.append(strong, small);
-    box.hidden = false;
-    clearTimeout(this.toastTimer);
-    this.toastTimer = setTimeout(() => {
-      box.hidden = true;
-    }, 2600);
-  }
-  private handleEvent(event: LiveEvent) {
-    let activity = '',
-      title = '';
-    switch (event.type) {
-      case 'GiftReceived': {
-        const gift = GIFTS[event.gift];
-        if (!this.game.gift(event.gift)) return;
-        this.gifts++;
-        activity = `sent a ${gift.name}`;
-        title = `${event.viewer.name} sent a ${gift.name}`;
-        this.toast(title, gift.effect);
         break;
-      }
-      case 'ViewerJoined':
-        this.viewers.add(event.viewer.id);
-        activity = 'joined the arena';
+      case 'restart':
+        this.begin();
         break;
-      case 'ChatMessage':
-        activity = event.message;
-        this.toast(event.viewer.name, event.message);
+      case 'mute':
+        this.sound.toggle();
         break;
-      case 'LikeReceived':
-        this.likes += event.count;
-        activity = `sent ${event.count} likes`;
-        this.game.burst(this.game.state.player, '#efbad1', 10);
+      case 'gift':
+        this.mock.send('GiftReceived', { gift: command.gift });
         break;
-      case 'FollowReceived':
-        activity = 'followed the adventure';
-        this.game.burst(this.game.state.player, '#dcdea3', 15);
+      case 'skill':
+        this.game.skill(command.skill);
+        break;
+      case 'auto':
+        command.enabled ? this.mock.start() : this.mock.stop();
+        break;
+      case 'crowd':
+        this.mock.crowd();
+        break;
+      case 'event':
+        if (this.game.state.status === 'running') this.handleEvent(command.event);
         break;
     }
-    this.feedCount++;
-    if (this.feedCount === 1) el('activity-feed').replaceChildren();
-    const li = document.createElement('li'),
-      avatar = document.createElement('span'),
-      text = document.createElement('span'),
-      name = document.createElement('b'),
-      time = document.createElement('time');
-    avatar.className = 'feed-avatar';
-    avatar.textContent = event.viewer.name.slice(0, 1);
+    this.render();
+  }
+  private moment(text: string, duration = 1100) {
+    el('moment').textContent = text;
+    el('moment').hidden = false;
+    this.momentUntil = Date.now() + duration;
+  }
+  private toast(event: LiveEvent, label: string, kind?: GiftKind) {
+    const box = el('gift-toast');
+    box.replaceChildren();
+    box.style.setProperty('--toast-color', kind ? GIFTS[kind].color : '#c8afff');
+    const symbol = document.createElement('span');
+    symbol.className = 'toast-icon';
+    symbol.innerHTML = icon(kind ? GIFTS[kind].icon : 'heart');
+    const name = document.createElement('b');
     name.textContent = event.viewer.name;
-    text.append(name, document.createTextNode(` ${activity}`));
-    time.textContent = 'NOW';
-    time.dateTime = new Date(event.at).toISOString();
-    li.append(avatar, text, time);
-    el('activity-feed').prepend(li);
-    while (el('activity-feed').children.length > 25) el('activity-feed').lastElementChild?.remove();
-    el('event-count').textContent = `${this.feedCount} EVENTS`;
-    el('viewers').textContent = String(this.viewers.size);
-    el('likes').textContent = String(this.likes);
-    el('gift-count').textContent = String(this.gifts);
+    const action = document.createElement('span');
+    action.textContent = label;
+    box.append(symbol, name, action);
+    box.hidden = false;
+    this.toastUntil = Date.now() + 1900;
+  }
+  private handleEvent(event: LiveEvent) {
+    const s = this.game.state;
+    if (s.status !== 'running') return;
+    this.bus.send({ type: 'activity', event });
+    if (event.type === 'GiftReceived') {
+      const result = this.game.gift(event.gift, event.viewer.name);
+      if (!result) {
+        this.toast(event, 'METEOR IN FLIGHT', event.gift);
+        return;
+      }
+      switch (result.kind) {
+        case 'rose':
+        case 'crown-support':
+          this.toast(event, result.healed ? `+${result.healed} HP` : 'FULL HEALTH', event.gift);
+          break;
+        case 'ice':
+          this.toast(event, result.interrupted ? 'ATTACK STOPPED' : 'FROZEN!', event.gift);
+          break;
+        case 'meteor':
+          this.toast(event, 'METEOR!', event.gift);
+          break;
+        case 'crown':
+          this.toast(event, 'SUMMONED A BOSS', event.gift);
+          break;
+      }
+    }
+    if (event.type === 'LikeReceived') {
+      this.likes = Math.min(this.likes + event.count, LIKES_PER_STRIKE);
+      this.game.burst(s.player, '#ff91c7', 12);
+      if (this.likes === LIKES_PER_STRIKE) {
+        this.chargedBy ??= event;
+        if (!this.castChargedLightning()) this.toast(event, 'LIGHTNING CHARGED');
+      } else {
+        this.toast(event, `⚡ ${this.likes}/${LIKES_PER_STRIKE}`);
+      }
+    }
+    if (event.type === 'FollowReceived') {
+      const healed = this.game.heal(5);
+      this.toast(event, healed ? `+${healed} HP` : 'FULL HEALTH');
+    }
+    if (event.type === 'ChatMessage') {
+      const skill = ({ fire: 'nova', ice: 'frost', bolt: 'lightning' } as Record<string, Skill>)[
+        event.message.trim().toLowerCase()
+      ];
+      if (skill && this.game.skill(skill)) this.toast(event, event.message.trim().toUpperCase());
+    }
+  }
+  private castChargedLightning() {
+    if (!this.chargedBy || !this.game.skill('lightning')) return false;
+    this.toast(this.chargedBy, 'LIGHTNING!');
+    this.chargedBy = undefined;
+    this.likes = 0;
+    return true;
   }
   private render() {
     const s = this.game.state,
-      playing = s.status === 'running';
+      now = Date.now();
+    if (this.chargedBy) this.castChargedLightning();
     document.body.dataset.gameStatus = s.status;
-    el('wave').textContent = String(s.wave).padStart(2, '0');
-    el('wave-name').textContent =
-      s.wave % 5 === 0
-        ? 'THE KING’S REIGN'
-        : (['THE AWAKENING', 'SHADOWS GATHER', 'INTO THE DARK', 'THE LAST STAND'][
-            (s.wave - 1) % 5
-          ] ?? 'THE AWAKENING');
-    el('score').textContent = s.score.toLocaleString();
-    el('kills').textContent = String(s.kills);
-    el('hp-text').textContent = `${Math.ceil(s.hp)} / ${s.maxHp}`;
+    document.body.dataset.wave = String(s.wave);
+    el('wave').textContent = String(s.wave);
+    el('hp-text').textContent = `${Math.ceil((s.hp / s.maxHp) * 100)}%`;
     el('hp-bar').style.width = `${(s.hp / s.maxHp) * 100}%`;
+    const bar = document.querySelector('[role="progressbar"]');
+    bar?.setAttribute('aria-valuenow', String(Math.ceil(s.hp)));
+    bar?.setAttribute('aria-valuemax', String(s.maxHp));
+    el('hud').classList.toggle('critical', s.hp / s.maxHp < 0.3);
     document
-      .querySelector('[role="progressbar"]')
-      ?.setAttribute('aria-valuenow', String(Math.ceil(s.hp)));
-    document.querySelector('[role="progressbar"]')?.setAttribute('aria-valuemax', String(s.maxHp));
-    el('timer').textContent = formatTime(s.time);
-    el('wave-progress-label').textContent =
-      s.freeze > 0
-        ? `FROZEN · ${s.freeze.toFixed(1)}s`
-        : `${s.spawnRemaining + s.enemies.length} enemies remaining`;
-    const boss = s.enemies.find((e) => e.kind === 'boss');
-    el('boss-health').hidden = !boss;
-    if (boss) {
-      el('boss-hp').style.width = `${Math.max(0, (boss.hp / boss.maxHp) * 100)}%`;
-      el('boss-phase').textContent = boss.hp < boss.maxHp / 2 ? 'ENRAGED' : 'PHASE I';
+      .querySelectorAll<HTMLButtonElement>('[data-gift]')
+      .forEach((button) => (button.disabled = s.status !== 'running'));
+    if (now > this.toastUntil) el('gift-toast').hidden = true;
+    if (now > this.momentUntil) el('moment').hidden = true;
+    if (s.status !== this.lastStatus) {
+      this.lastStatus = s.status;
+      this.statusSince = now;
     }
-    el<HTMLButtonElement>('pause').disabled = !playing;
-    document.querySelectorAll<HTMLButtonElement>('[data-skill]').forEach((button) => {
-      const key = button.dataset.skill as Skill,
-        remaining = s.cooldowns[key];
-      button.disabled = !playing || remaining > 0;
-      button.classList.toggle('cooling', remaining > 0);
-      button.style.setProperty('--cooldown', String(remaining / COOLDOWNS[key]));
-      const text = button.querySelector('.cooldown');
-      if (text) text.textContent = `${Math.ceil(remaining)}`;
-      button.setAttribute(
-        'aria-label',
-        `${key === 'nova' ? 'Fire Nova' : key === 'frost' ? 'Frost Ward' : 'Arc Lightning'}${remaining > 0 ? `, ready in ${Math.ceil(remaining)} seconds` : ', ready'}`,
-      );
-    });
-    document
-      .querySelectorAll<HTMLButtonElement>('[data-gift],#send-event,#crowd')
-      .forEach((button) => {
-        button.disabled = !playing;
+    if (s.status === 'upgrade' && now - this.statusSince > 850) {
+      const blessing: Upgrade = (['power', 'haste', 'vitality'] as const)[(s.wave - 1) % 3];
+      this.game.upgrade(blessing);
+      this.moment(`WAVE ${s.wave}`);
+    }
+    const stopped = s.status === 'paused' || s.status === 'gameover';
+    el('run-state').hidden = !stopped;
+    if (stopped) {
+      el('run-message').textContent = s.status === 'paused' ? 'PAUSED' : 'CRYSTAL LOST';
+      el('retry').hidden = s.status === 'paused';
+    }
+    if (s.status === 'gameover' && now - this.statusSince > 4500) {
+      this.begin();
+      return;
+    }
+    if (now - this.lastPublish > 250) {
+      this.lastPublish = now;
+      const { status, wave, hp, maxHp, kills, score, gifts, time, freeze } = s;
+      this.bus.send({
+        type: 'snapshot',
+        state: { status, wave, hp, maxHp, kills, score, gifts, time, freeze },
       });
-    const overlay = el('game-overlay');
-    overlay.hidden = playing;
-    if (this.lastStatus === s.status) return;
-    this.lastStatus = s.status;
-    overlay.classList.toggle('ready-overlay', s.status === 'ready');
-    const card = el('overlay-card');
-    if (s.status === 'paused')
-      card.innerHTML = `<span class="overlay-rune">${icon('pause')}</span><small class="eyebrow">TAKE A BREATH, GUARDIAN</small><h2>The light can wait.</h2><p>Your run is paused.<br>Return when you’re ready.</p><button class="primary-button" data-action="resume">Return to the arena ${icon('play')}</button>`;
-    if (s.status === 'upgrade')
-      card.innerHTML = `<span class="overlay-rune">${icon('crown')}</span><small class="eyebrow">WAVE ${s.wave} SECURED · ${s.xp} XP</small><h2>A little stronger.</h2><p>The darkness returns. Choose your blessing.</p><div class="upgrade-list"><button class="upgrade-choice" data-upgrade="power">${icon('bolt')}<span><strong>Arcane Power</strong><small>+7 damage to every attack</small></span>${icon('chevron')}</button><button class="upgrade-choice" data-upgrade="vitality">${icon('heart')}<span><strong>Living Crystal</strong><small>+20 max health · restore 35 health</small></span>${icon('chevron')}</button><button class="upgrade-choice" data-upgrade="haste">${icon('sword')}<span><strong>Quickening</strong><small>Attack 12% faster</small></span>${icon('chevron')}</button></div><span class="start-note">NEXT: WAVE ${s.wave + 1}${(s.wave + 1) % 5 === 0 ? ' · BOSS INCOMING' : ''}</span>`;
-    if (s.status === 'gameover')
-      card.innerHTML = `<span class="overlay-rune">${icon('crystal')}</span><small class="eyebrow">THE CRYSTAL HAS FALLEN</small><h2>Even light rests.</h2><p>But every guardian gets another dawn.</p><div class="results-stats"><div><b>${s.score.toLocaleString()}</b><span>POINTS</span></div><div><b>${s.wave}</b><span>WAVE</span></div><div><b>${s.kills}</b><span>VANQUISHED</span></div></div><button class="primary-button" data-action="restart">Rise again ${icon('arrow')}</button><span class="start-note">SURVIVED ${formatTime(s.time)} · ${s.xp} XP · BEST ${s.best.toLocaleString()}</span>`;
+    }
   }
   dispose() {
     clearInterval(this.interval);
-    clearTimeout(this.toastTimer);
-    clearTimeout(this.bossTimer);
+    this.abort.abort();
     this.mock.dispose();
     this.unsubs.forEach((fn) => fn());
+    this.bus.dispose();
   }
 }

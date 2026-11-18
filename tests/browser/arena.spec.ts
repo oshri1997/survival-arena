@@ -1,106 +1,125 @@
 import { test, expect, type Page } from '@playwright/test';
-const begin = async (page: Page) => {
-  await page.goto('/');
-  await page.getByRole('button', { name: 'Enter the arena' }).click();
+const begin = async (page: Page, session: string) => {
+  await page.goto(`/?session=${session}`);
   await expect(page.locator('body')).toHaveAttribute('data-game-status', 'running');
 };
-const studio = async (page: Page) => {
-  const open = page.getByRole('button', { name: 'Open broadcaster controls' });
-  if (await open.isVisible()) await open.click();
+const connect = async (page: Page, session: string) => {
+  const admin = await page.context().newPage();
+  await admin.goto(`/admin.html?session=${session}`);
+  await expect(admin.locator('#connection')).toHaveText('Game connected');
+  return admin;
 };
 
-test('boots original animated arena, starts real combat, scores and pauses', async ({
+test('opens directly into gameplay, fills the screen and keeps admin outside the arena', async ({
   page,
 }, info) => {
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
-  await page.goto('/');
-  await expect(page.getByRole('button', { name: 'Enter the arena' })).toBeEnabled();
+  await begin(page, `layout-${info.project.name}`);
   await expect(page.locator('#phaser-game canvas')).toBeVisible();
-  await page.screenshot({ path: `test-results/${info.project.name}-welcome.png`, fullPage: true });
-  await page.getByRole('button', { name: 'Enter the arena' }).click();
-  await expect
-    .poll(async () => Number((await page.locator('#kills').innerText()).replaceAll(',', '')), {
-      timeout: 25000,
-    })
-    .toBeGreaterThan(0);
-  await expect
-    .poll(async () => Number((await page.locator('#score').innerText()).replaceAll(',', '')))
-    .toBeGreaterThan(0);
-  await page.getByRole('button', { name: 'Pause game', exact: true }).click();
-  await expect(page.getByText('The light can wait.')).toBeVisible();
-  const timer = await page.locator('#timer').innerText();
-  await page.waitForTimeout(1200);
-  await expect(page.locator('#timer')).toHaveText(timer);
-  await page.getByRole('button', { name: 'Return to the arena' }).click();
-  await page.screenshot({ path: `test-results/${info.project.name}-gameplay.png`, fullPage: true });
+  expect(await page.locator('h1,aside,dialog,iframe,.site-header,.studio-panel').count()).toBe(0);
+  expect(await page.locator('#score,#kills,#timer,#wave-name').count()).toBe(0);
+  for (const viewport of [
+    info.project.name === 'iphone-webkit'
+      ? { width: 390, height: 844 }
+      : { width: 1440, height: 1000 },
+    { width: 430, height: 932 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await expect
+      .poll(async () =>
+        page
+          .locator('#phaser-game canvas')
+          .evaluate((c) =>
+            Math.max(
+              Math.abs(c.getBoundingClientRect().width - innerWidth),
+              Math.abs(c.getBoundingClientRect().height - innerHeight),
+            ),
+          ),
+      )
+      .toBeLessThan(2);
+    const coverage = await page.locator('#phaser-game canvas').evaluate((c) => {
+      const r = c.getBoundingClientRect();
+      return (r.width * r.height) / (innerWidth * innerHeight);
+    });
+    expect(coverage).toBeGreaterThanOrEqual(0.8);
+    expect(
+      await page.evaluate(
+        () =>
+          document.documentElement.scrollWidth <= innerWidth &&
+          document.documentElement.scrollHeight <= innerHeight,
+      ),
+    ).toBe(true);
+  }
+  await page.screenshot({ path: `test-results/${info.project.name}-gameplay.png` });
   expect(errors).toEqual([]);
 });
 
-test('casts three spells and enforces cooldowns', async ({ page }) => {
-  await begin(page);
-  for (const name of ['Fire Nova', 'Frost Ward', 'Arc Lightning']) {
-    const button = page.getByRole('button', { name: `${name}, ready`, exact: true });
-    await button.click();
-    await expect(
-      page.getByRole('button', { name: new RegExp(`${name}, ready in`) }),
-    ).toBeDisabled();
-  }
-  await expect(page.locator('#wave-progress-label')).toContainText('FROZEN');
-  await page.getByRole('button', { name: 'Mute sound' }).click();
-  await expect(page.getByRole('button', { name: 'Enable sound' })).toBeVisible();
-});
-
-test('mock gifts summon a boss and all event types work without a network connector', async ({
+test('separate admin controls the same game: gifts, combat scoring, pause and chat', async ({
   page,
 }, info) => {
-  const requests: string[] = [];
-  page.on('request', (request) => {
-    if (/^https?:/.test(request.url()) && new URL(request.url()).origin !== 'http://127.0.0.1:4173')
-      requests.push(request.url());
-  });
-  await begin(page);
-  await studio(page);
-  await page.locator('[data-gift="crown"]').click();
-  await expect(page.locator('#boss-health')).toBeVisible();
-  await expect(page.locator('#gift-count')).toHaveText('1');
-  await page.locator('#studio-panel').evaluate((panel) => {
-    panel.scrollTop = panel.scrollHeight;
-  });
-  await page.locator('.event-tools summary').click();
-  await page.getByRole('button', { name: 'Simulate a crowd' }).click();
-  await expect(page.locator('#viewers')).toHaveText('4');
-  await expect(page.locator('#likes')).toHaveText('25');
-  await expect(page.locator('#gift-count')).toHaveText('2');
-  await expect(page.locator('#event-count')).toHaveText('9 EVENTS');
-  await page.locator('#event-type').selectOption('ChatMessage');
-  await page
+  const session = `studio-${info.project.name}`;
+  await begin(page, session);
+  const admin = await connect(page, session);
+  await admin.locator('[data-gift="meteor"]').click();
+  await expect(admin.locator('#activity-feed')).toContainText('sent meteor');
+  await expect
+    .poll(async () => parseInt((await admin.locator('#admin-kills').innerText()).split(' ')[0]))
+    .toBeGreaterThan(0);
+  await expect(page.locator('#gift-toast')).toContainText('METEOR!');
+  await admin.locator('[data-command="pause"]').click();
+  await expect(page.locator('body')).toHaveAttribute('data-game-status', 'paused');
+  await expect(page.locator('#run-message')).toHaveText('PAUSED');
+  await admin.locator('[data-command="resume"]').click();
+  await expect(page.locator('body')).toHaveAttribute('data-game-status', 'running');
+  await admin.locator('[data-gift="crown"]').click();
+  await expect(page.locator('#moment')).toContainText('BOSS');
+  await admin.locator('#event-type').selectOption('ChatMessage');
+  await admin
     .getByRole('textbox', { name: 'Mock chat message' })
     .fill('<img src=x onerror=alert(1)>');
-  await page.getByRole('button', { name: 'Send event', exact: true }).click();
-  await expect(
-    page.locator('#activity-feed').getByText('<img src=x onerror=alert(1)>', { exact: false }),
-  ).toBeVisible();
-  expect(await page.locator('#activity-feed img').count()).toBe(0);
-  await page.screenshot({ path: `test-results/${info.project.name}-studio.png`, fullPage: true });
-  expect(requests).toEqual([]);
+  await admin.getByRole('button', { name: 'Send event', exact: true }).click();
+  await expect(admin.locator('#activity-feed')).toContainText('<img src=x onerror=alert(1)>');
+  expect(await admin.locator('#activity-feed img').count()).toBe(0);
+  await admin.getByRole('button', { name: 'Simulate a crowd' }).click();
+  await expect(admin.locator('#activity-feed')).toContainText('followed');
+  await admin.screenshot({ path: `test-results/${info.project.name}-admin.png`, fullPage: true });
+  await admin.close();
 });
 
-test('keeps a 9:16 playfield without horizontal overflow and supports a clean broadcast view', async ({
+test('touch interactions trigger visible freeze, healing, meteor and boss effects', async ({
   page,
-}) => {
-  await page.goto('/');
-  await expect(page.getByRole('button', { name: 'Enter the arena' })).toBeEnabled();
-  const box = await page.locator('#arena-frame').boundingBox();
-  expect(box).not.toBeNull();
-  expect(Math.abs(box!.width / box!.height - 9 / 16)).toBeLessThan(0.005);
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-  await page.goto('/?broadcast=1');
-  await expect(page.getByRole('button', { name: 'Enter the arena' })).toBeEnabled();
-  await expect(page.locator('.site-header')).toBeHidden();
-  await expect(page.locator('#studio-panel')).toBeHidden();
-  const broadcast = await page.locator('#arena-frame').boundingBox();
-  expect(Math.abs(broadcast!.width / broadcast!.height - 9 / 16)).toBeLessThan(0.005);
-  await page.getByRole('button', { name: 'Enter the arena' }).click();
+}, info) => {
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  await begin(page, `touch-${info.project.name}`);
+  await page.getByRole('button', { name: 'Simulate Ice heart', exact: true }).click();
+  await expect(page.locator('#gift-toast')).toContainText('FROZEN!');
+  await page.getByRole('button', { name: 'Simulate Rose', exact: true }).click();
+  await expect(page.locator('#gift-toast')).toContainText(/FULL HEALTH|\+\d+ HP/);
+  await page.getByRole('button', { name: 'Simulate Meteor', exact: true }).click();
+  await expect(page.locator('#gift-toast')).toContainText('METEOR!');
+  await page.getByRole('button', { name: 'Simulate Crown', exact: true }).click();
+  await expect(page.locator('#moment')).toHaveText('BOSS!');
+  await page.getByRole('button', { name: 'Simulate Crown', exact: true }).click();
+  await expect(page.locator('#gift-toast')).toContainText(/FULL HEALTH|\+\d+ HP/);
+  expect(errors).toEqual([]);
+});
+
+test('local storage fallback connects admin when BroadcastChannel is unavailable', async ({
+  page,
+}, info) => {
+  await page
+    .context()
+    .addInitScript(() =>
+      Object.defineProperty(window, 'BroadcastChannel', { value: undefined, configurable: true }),
+    );
+  const session = `fallback-${info.project.name}`;
+  await begin(page, session);
+  const admin = await connect(page, session);
+  await admin.locator('[data-command="pause"]').click();
+  await expect(page.locator('body')).toHaveAttribute('data-game-status', 'paused');
+  await admin.locator('[data-command="resume"]').click();
   await expect(page.locator('body')).toHaveAttribute('data-game-status', 'running');
+  await admin.close();
 });
