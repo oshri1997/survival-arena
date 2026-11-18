@@ -1,5 +1,5 @@
 import { Game } from '../game/engine';
-import { GIFTS } from '../game/config';
+import { GIFTS, LIKES_PER_STRIKE } from '../game/config';
 import type { GiftKind, Skill, Upgrade } from '../game/types';
 import type { LiveEvent } from '../integrations/events/types';
 import { MockProvider } from '../integrations/mock/MockProvider';
@@ -28,6 +28,7 @@ export class Controller {
   private lastStatus = 'ready';
   private lastPublish = 0;
   private likes = 0;
+  private chargedBy?: LiveEvent;
   private abort = new AbortController();
   constructor(
     readonly game: Game,
@@ -44,6 +45,9 @@ export class Controller {
       game.on((event) => {
         if (event.type === 'sound') this.sound.play(event.sound);
         if (event.type === 'boss') this.moment('BOSS!');
+        if (event.type === 'boss-phase') this.moment('ENRAGED!');
+        if (event.type === 'boss-interrupted') this.moment('ATTACK STOPPED');
+        if (event.type === 'boss-defeated') this.moment('BOSS DOWN!');
         if (event.type === 'defeat')
           try {
             localStorage.setItem('survival-arena-best', String(game.state.best));
@@ -95,6 +99,8 @@ export class Controller {
   private begin() {
     this.game.start(true);
     this.likes = 0;
+    this.chargedBy = undefined;
+    el('gift-toast').hidden = true;
     el('run-state').hidden = true;
     this.moment('DEFEND THE CRYSTAL', 1500);
     this.render();
@@ -139,6 +145,7 @@ export class Controller {
   private toast(event: LiveEvent, label: string, kind?: GiftKind) {
     const box = el('gift-toast');
     box.replaceChildren();
+    box.style.setProperty('--toast-color', kind ? GIFTS[kind].color : '#c8afff');
     const symbol = document.createElement('span');
     symbol.className = 'toast-icon';
     symbol.innerHTML = icon(kind ? GIFTS[kind].icon : 'heart');
@@ -155,32 +162,40 @@ export class Controller {
     if (s.status !== 'running') return;
     this.bus.send({ type: 'activity', event });
     if (event.type === 'GiftReceived') {
-      this.game.gift(event.gift);
-      if (event.gift === 'crown') {
-        const boss = s.enemies.find((e) => e.kind === 'boss');
-        if (boss) boss.viewerName = event.viewer.name;
+      const result = this.game.gift(event.gift, event.viewer.name);
+      if (!result) {
+        this.toast(event, 'METEOR IN FLIGHT', event.gift);
+        return;
       }
-      this.toast(
-        event,
-        ({ rose: '+25 HP', ice: 'FROZEN!', meteor: 'METEOR!', crown: 'SUMMONED A BOSS' } as const)[
-          event.gift
-        ],
-        event.gift,
-      );
+      switch (result.kind) {
+        case 'rose':
+        case 'crown-support':
+          this.toast(event, result.healed ? `+${result.healed} HP` : 'FULL HEALTH', event.gift);
+          break;
+        case 'ice':
+          this.toast(event, result.interrupted ? 'ATTACK STOPPED' : 'FROZEN!', event.gift);
+          break;
+        case 'meteor':
+          this.toast(event, 'METEOR!', event.gift);
+          break;
+        case 'crown':
+          this.toast(event, 'SUMMONED A BOSS', event.gift);
+          break;
+      }
     }
     if (event.type === 'LikeReceived') {
-      this.likes += event.count;
+      this.likes = Math.min(this.likes + event.count, LIKES_PER_STRIKE);
       this.game.burst(s.player, '#ff91c7', 12);
-      if (this.likes >= 20) {
-        this.likes %= 20;
-        this.game.skill('lightning');
-        this.toast(event, 'LIGHTNING!');
+      if (this.likes === LIKES_PER_STRIKE) {
+        this.chargedBy ??= event;
+        if (!this.castChargedLightning()) this.toast(event, 'LIGHTNING CHARGED');
+      } else {
+        this.toast(event, `⚡ ${this.likes}/${LIKES_PER_STRIKE}`);
       }
     }
     if (event.type === 'FollowReceived') {
-      s.hp = Math.min(s.maxHp, s.hp + 5);
-      this.game.burst(s.player, '#fff099', 20);
-      this.toast(event, '+5 HP');
+      const healed = this.game.heal(5);
+      this.toast(event, healed ? `+${healed} HP` : 'FULL HEALTH');
     }
     if (event.type === 'ChatMessage') {
       const skill = ({ fire: 'nova', ice: 'frost', bolt: 'lightning' } as Record<string, Skill>)[
@@ -189,9 +204,17 @@ export class Controller {
       if (skill && this.game.skill(skill)) this.toast(event, event.message.trim().toUpperCase());
     }
   }
+  private castChargedLightning() {
+    if (!this.chargedBy || !this.game.skill('lightning')) return false;
+    this.toast(this.chargedBy, 'LIGHTNING!');
+    this.chargedBy = undefined;
+    this.likes = 0;
+    return true;
+  }
   private render() {
     const s = this.game.state,
       now = Date.now();
+    if (this.chargedBy) this.castChargedLightning();
     document.body.dataset.gameStatus = s.status;
     document.body.dataset.wave = String(s.wave);
     el('wave').textContent = String(s.wave);
@@ -221,7 +244,10 @@ export class Controller {
       el('run-message').textContent = s.status === 'paused' ? 'PAUSED' : 'CRYSTAL LOST';
       el('retry').hidden = s.status === 'paused';
     }
-    if (s.status === 'gameover' && now - this.statusSince > 4500) this.begin();
+    if (s.status === 'gameover' && now - this.statusSince > 4500) {
+      this.begin();
+      return;
+    }
     if (now - this.lastPublish > 250) {
       this.lastPublish = now;
       const { status, wave, hp, maxHp, kills, score, gifts, time, freeze } = s;

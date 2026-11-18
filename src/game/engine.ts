@@ -1,10 +1,11 @@
-import { COOLDOWNS, ENEMIES, waveCount } from './config';
+import { COOLDOWNS, CRYSTAL_RADIUS, ENEMIES, METEOR_FLIGHT, waveCount } from './config';
 import type {
   Enemy,
   EnemyKind,
   GameEvent,
   GameState,
   GiftKind,
+  GiftResult,
   Skill,
   Upgrade,
   Vec,
@@ -47,7 +48,7 @@ export class Game {
       particles: [],
       rings: [],
       texts: [],
-      hazards: [],
+      meteor: 0,
       spawnRemaining: waveCount(1),
       waveTotal: waveCount(1),
       waveKilled: 0,
@@ -80,7 +81,6 @@ export class Game {
       ...this.state.particles,
       ...this.state.rings,
       ...this.state.texts,
-      ...this.state.hazards,
     ]) {
       p.x *= sx;
       p.y *= sy;
@@ -96,6 +96,7 @@ export class Game {
         const angle = (i * Math.PI) / 3 + 0.4;
         e.x = this.state.player.x + Math.cos(angle) * Math.min(320, this.bounds.width * 0.35);
         e.y = this.state.player.y + Math.sin(angle) * 180;
+        this.emit({ type: 'spawn', at: { x: e.x, y: e.y }, kind: e.kind });
         this.state.spawnRemaining--;
       }
     }
@@ -168,15 +169,20 @@ export class Game {
       phase: this.random() * 6.28,
       hit: 0,
       attack: 3.5,
+      windup: 0,
+      windupDuration: 0,
+      enraged: false,
     };
     s.enemies.push(enemy);
     return enemy;
   }
-  summonBoss() {
+  summonBoss(viewerName?: string) {
     if (this.state.enemies.some((e) => e.kind === 'boss')) return false;
     const e = this.spawn('boss');
     e.x = this.bounds.width / 2;
     e.y = 145;
+    e.viewerName = viewerName;
+    this.emit({ type: 'spawn', at: { x: e.x, y: e.y }, kind: e.kind });
     this.burst(e, '#d99fdd', 40);
     this.sound('boss');
     this.emit({ type: 'boss' });
@@ -184,17 +190,10 @@ export class Game {
   }
   skill(skill: Skill) {
     const s = this.state;
-    if (s.status !== 'running' || s.cooldowns[skill] > 0) return false;
+    if (s.status !== 'running' || s.cooldowns[skill] > 0 || !s.enemies.length) return false;
     s.cooldowns[skill] = COOLDOWNS[skill];
     if (skill === 'nova') this.nova(170, s.damage * 3);
-    if (skill === 'frost') {
-      s.freeze = Math.max(s.freeze, 5);
-      s.hazards = [];
-      s.shots = s.shots.filter((shot) => !shot.hostile);
-      this.ring(s.player, '#a2e5ff', 230);
-      this.emit({ type: 'spell', effect: 'frost', targets: [] });
-      this.sound('frost');
-    }
+    if (skill === 'frost') this.freezeArena();
     if (skill === 'lightning') {
       const targets = [...s.enemies]
         .sort(
@@ -216,38 +215,44 @@ export class Game {
     }
     return true;
   }
-  gift(kind: GiftKind) {
+  private freezeArena() {
     const s = this.state;
-    if (s.status !== 'running') return false;
+    const chargingBoss = s.enemies.find((e) => e.kind === 'boss' && e.windup > 0);
+    s.freeze = Math.max(s.freeze, 5);
+    s.shots = s.shots.filter((shot) => !shot.hostile);
+    this.ring(s.player, '#a2e5ff', 230);
+    this.emit({ type: 'spell', effect: 'frost', targets: [] });
+    this.sound('frost');
+    if (chargingBoss) {
+      chargingBoss.windup = 0;
+      chargingBoss.attack = 2.5;
+      this.emit({ type: 'boss-interrupted', at: { x: chargingBoss.x, y: chargingBoss.y } });
+      this.damageEnemy(chargingBoss, s.damage * 2);
+    }
+    return !!chargingBoss;
+  }
+  heal(amount: number) {
+    const s = this.state;
+    const healed = Math.min(amount, s.maxHp - s.hp);
+    s.hp += healed;
+    if (healed > 0) this.float(s.player, `+${healed} HP`, '#baffac');
+    this.emit({ type: 'heal', at: { ...s.player }, amount: healed });
+    return healed;
+  }
+  gift(kind: GiftKind, viewerName?: string): GiftResult | false {
+    const s = this.state;
+    if (s.status !== 'running' || (kind === 'meteor' && s.meteor > 0)) return false;
     s.gifts++;
-    if (kind === 'rose') {
-      s.hp = Math.min(s.maxHp, s.hp + 25);
-      this.float(s.player, '+25 HP', '#9ff3bf');
-      this.burst(s.player, '#f5a4bd', 25);
-    }
-    if (kind === 'ice') {
-      s.freeze = Math.max(s.freeze, 5);
-      this.ring(s.player, '#a2e5ff', 420);
-      this.emit({ type: 'spell', effect: 'frost', targets: [] });
-      this.sound('frost');
-    }
-    if (kind === 'meteor') {
-      this.emit({
-        type: 'spell',
-        effect: 'meteor',
-        targets: s.enemies.map((e) => ({ x: e.x, y: e.y })).slice(0, 8),
-      });
-      this.nova(900, 180);
-    }
-    if (kind === 'crown') {
-      if (!this.summonBoss()) {
-        s.hp = Math.min(s.maxHp, s.hp + 25);
-        this.float(s.player, 'KING ALREADY PRESENT · +25 HP', '#e5ca80');
-      }
-    }
     s.score += 50;
     this.sound('gift');
-    return true;
+    if (kind === 'rose') return { kind, healed: this.heal(25) };
+    if (kind === 'ice') return { kind, interrupted: this.freezeArena() };
+    if (kind === 'meteor') {
+      s.meteor = METEOR_FLIGHT;
+      return { kind };
+    }
+    if (this.summonBoss(viewerName)) return { kind: 'crown' };
+    return { kind: 'crown-support', healed: this.heal(25) };
   }
   private nova(radius: number, damage: number) {
     const s = this.state;
@@ -289,6 +294,10 @@ export class Game {
     e.hit = 0.15;
     this.float(e, String(Math.round(damage)), '#f6e6b6');
     if (e.hp > 0) {
+      if (e.kind === 'boss' && !e.enraged && e.hp <= e.maxHp / 2) {
+        e.enraged = true;
+        this.emit({ type: 'boss-phase', at: { x: e.x, y: e.y } });
+      }
       this.burst(e, '#c1ebd0', 4);
       return;
     }
@@ -301,12 +310,12 @@ export class Game {
     this.burst(e, e.kind === 'boss' ? '#eac778' : '#9ad6af', e.kind === 'boss' ? 65 : 14);
     this.sound('kill');
     if (e.kind === 'boss') {
-      s.hp = Math.min(s.maxHp, s.hp + 20);
-      s.hazards = [];
+      this.heal(20);
       s.shots = s.shots.filter((shot) => !shot.hostile);
+      this.emit({ type: 'boss-defeated', at: { x: e.x, y: e.y } });
     }
   }
-  hurt(damage: number) {
+  hurt(damage: number, attackerId?: number) {
     const s = this.state;
     if (s.invulnerable > 0 || s.status !== 'running') return;
     s.hp = Math.max(0, s.hp - damage);
@@ -314,12 +323,43 @@ export class Game {
     s.shake = 4;
     s.flash = 0.2;
     this.sound('hit');
+    this.emit({ type: 'crystal-hit', attackerId });
     this.float(s.player, `−${damage}`, '#ff9696');
     if (!s.hp) {
       s.status = 'gameover';
+      s.meteor = 0;
       s.best = Math.max(s.best, s.score);
       this.sound('defeat');
       this.emit({ type: 'defeat', score: s.score });
+    }
+  }
+  private updateBoss(boss: Enemy, dt: number) {
+    const s = this.state;
+    if (boss.windup > 0) {
+      boss.windup = Math.max(0, boss.windup - dt);
+      if (boss.windup > 0) return;
+      this.hurt(boss.enraged ? 19 : 13, boss.id);
+      this.emit({ type: 'boss-strike', at: { ...s.player } });
+      const count = boss.enraged ? 8 : 5;
+      for (let i = 0; i < count; i++) {
+        const angle = (i * 2 * Math.PI) / count + s.time;
+        s.shots.push({
+          x: boss.x,
+          y: boss.y,
+          vx: Math.cos(angle) * 100,
+          vy: Math.sin(angle) * 100,
+          hostile: true,
+          damage: 8,
+          life: 3,
+        });
+      }
+      return;
+    }
+    boss.attack -= dt;
+    if (boss.attack <= 0) {
+      boss.windupDuration = boss.enraged ? 1.15 : 1.6;
+      boss.windup = boss.windupDuration;
+      boss.attack = boss.enraged ? 2.7 : 3.7;
     }
   }
   update(dt: number, externalCollisions = this.externalCollisions) {
@@ -333,9 +373,20 @@ export class Game {
     s.flash = Math.max(0, s.flash - dt);
     for (const key of Object.keys(s.cooldowns) as Skill[])
       s.cooldowns[key] = Math.max(0, s.cooldowns[key] - dt);
+    if (s.meteor > 0) {
+      s.meteor = Math.max(0, s.meteor - dt);
+      if (s.meteor === 0) {
+        this.emit({ type: 'meteor-landed', at: { ...s.player } });
+        this.ring(s.player, '#ffaf43', 300);
+        this.burst(s.player, '#ffd36e', 50);
+        for (const enemy of [...s.enemies]) this.damageEnemy(enemy, 180);
+        this.sound('nova');
+      }
+    }
     s.spawnTimer -= dt;
     if (s.spawnRemaining > 0 && s.spawnTimer <= 0 && s.enemies.length < 65) {
-      this.spawn();
+      const e = this.spawn();
+      this.emit({ type: 'spawn', at: { x: e.x, y: e.y }, kind: e.kind });
       s.spawnRemaining--;
       s.spawnTimer = Math.max(0.3, 1.1 - s.wave * 0.035);
     }
@@ -347,9 +398,10 @@ export class Game {
           ? a
           : b,
       );
-      const angle = Math.atan2(target.y - s.player.y, target.x - s.player.x);
+      const origin = { x: s.player.x + 91, y: s.player.y + 11 };
+      const angle = Math.atan2(target.y - origin.y, target.x - origin.x);
       s.shots.push({
-        ...s.player,
+        ...origin,
         vx: Math.cos(angle) * 310,
         vy: Math.sin(angle) * 310,
         life: 2.5,
@@ -364,29 +416,13 @@ export class Game {
       if (s.freeze > 0) continue;
       const angle = Math.atan2(s.player.y - e.y, s.player.x - e.x);
       const distance = Math.hypot(e.x - s.player.x, e.y - s.player.y);
-      if (distance > e.radius + 12) {
+      if (distance > e.radius + CRYSTAL_RADIUS - 2 && e.windup === 0) {
         e.x += Math.cos(angle) * e.speed * dt;
         e.y += Math.sin(angle) * e.speed * dt;
-      } else if (!externalCollisions) this.hurt(e.kind === 'boss' ? 22 : 10);
-      if (e.kind === 'boss') {
-        e.attack -= dt;
-        if (e.attack <= 0) {
-          e.attack = e.hp < e.maxHp / 2 ? 2.4 : 3.6;
-          s.hazards.push({ ...s.player, radius: e.hp < e.maxHp / 2 ? 62 : 48, remaining: 1.2 });
-          for (let i = 0; i < 8; i++) {
-            const a = (i * Math.PI) / 4 + s.time;
-            s.shots.push({
-              x: e.x,
-              y: e.y,
-              vx: Math.cos(a) * 85,
-              vy: Math.sin(a) * 85,
-              hostile: true,
-              damage: 14,
-              life: 6,
-            });
-          }
-        }
+      } else if (!externalCollisions && distance <= e.radius + CRYSTAL_RADIUS && e.windup === 0) {
+        this.hurt(e.kind === 'boss' ? 17 : 10, e.id);
       }
+      if (e.kind === 'boss') this.updateBoss(e, dt);
     }
     for (const shot of s.shots) {
       shot.x += shot.vx * dt;
@@ -394,7 +430,7 @@ export class Game {
       shot.life -= dt;
       if (externalCollisions) continue;
       if (shot.hostile) {
-        if (Math.hypot(shot.x - s.player.x, shot.y - s.player.y) < 17) {
+        if (Math.hypot(shot.x - s.player.x, shot.y - s.player.y) < CRYSTAL_RADIUS + 5) {
           this.hurt(shot.damage);
           shot.life = 0;
         }
@@ -409,16 +445,6 @@ export class Game {
       }
     }
     s.shots = s.shots.filter((shot) => shot.life > 0);
-    for (const hazard of s.hazards) {
-      hazard.remaining -= dt;
-      if (hazard.remaining <= 0) {
-        if (Math.hypot(hazard.x - s.player.x, hazard.y - s.player.y) < hazard.radius + 10)
-          this.hurt(25);
-        this.ring(hazard, '#d77ba3', hazard.radius);
-        this.burst(hazard, '#c987d2', 18);
-      }
-    }
-    s.hazards = s.hazards.filter((hazard) => hazard.remaining > 0);
     for (const p of s.particles) {
       p.x += p.vx * dt;
       p.y += p.vy * dt;
@@ -434,12 +460,11 @@ export class Game {
       t.life -= dt;
     }
     s.texts = s.texts.filter((t) => t.life > 0);
-    if (s.spawnRemaining === 0 && s.enemies.length === 0 && s.status === 'running') {
+    if (s.spawnRemaining === 0 && s.enemies.length === 0 && !s.meteor && s.status === 'running') {
       s.waveBreak += dt;
       if (s.waveBreak >= 1.2) {
         s.status = 'upgrade';
         s.shots = [];
-        s.hazards = [];
         this.sound('wave');
       }
     }

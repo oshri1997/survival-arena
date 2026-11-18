@@ -17,17 +17,17 @@ npm run dev
 - **`/admin.html`** — separate broadcaster controls. Open the game in the same browser first, or use **Open game** in the admin page.
 - Optionally add the same `?session=my-stream` to both URLs to isolate sessions.
 
-The goal is to protect the glowing crystal. Enemies attack it, automatic bolts defeat them, and every fifth wave brings a boss. Clear a wave to receive an automatic power, attack speed or vitality blessing. After defeat, the game restarts in 4.5 seconds; the play button restarts sooner.
+The goal is to protect the glowing crystal. Enemies attack it, automatic bolts defeat them, and every fifth wave brings a boss. A pink targeting ring and beam show the boss winding up. Freeze interrupts the attack. At half health the boss attacks faster. Clear a wave to receive an automatic power, attack speed or vitality blessing. After defeat, the game restarts in 4.5 seconds; the play button restarts sooner.
 
-| Simulated interaction      | Visible effect                                              |
-| -------------------------- | ----------------------------------------------------------- |
-| Rose                       | Restore up to 25 crystal health                             |
-| Ice heart                  | Freeze enemies for 5 seconds                                |
-| Meteor                     | Large firestorm and falling fireballs                       |
-| Crown                      | Summon a boss bearing the sender’s name; one boss at a time |
-| 20 likes                   | Cast lightning if its cooldown is ready                     |
-| Follow                     | Restore up to 5 health                                      |
-| Chat `fire`, `ice`, `bolt` | Cast the corresponding ability if ready                     |
+| Simulated interaction      | Visible effect                                             |
+| -------------------------- | ---------------------------------------------------------- |
+| Rose                       | Restore up to 25 crystal health                            |
+| Ice heart                  | Freeze enemies for 5 seconds and interrupt a charging boss |
+| Meteor                     | A falling meteor damages the horde on impact               |
+| Crown                      | Summon a named boss, or heal if a boss is already present  |
+| 20 likes                   | Charge one lightning strike that fires when ready          |
+| Follow                     | Restore up to 5 health                                     |
+| Chat `fire`, `ice`, `bolt` | Cast the corresponding ability if ready                    |
 
 The four small gift controls on the viewer screen let you try the interactions without TikTok. **SIM** identifies this mode. Admin supports all five typed event categories, crowd simulation, auto events, direct abilities, pause/resume, restart and sound. Keyboard alternatives: Q / W / E for spells, P to pause.
 

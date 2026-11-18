@@ -12,6 +12,8 @@ export class ArenaScene extends Phaser.Scene {
   private floor!: Phaser.GameObjects.TileSprite;
   private arena!: Phaser.GameObjects.Image;
   private glow!: Phaser.GameObjects.Image;
+  private muzzle!: Phaser.GameObjects.Image;
+  private shotFlash?: Phaser.Tweens.Tween;
   private torches: Phaser.GameObjects.Image[] = [];
   private unsubscribe?: () => void;
   private accumulator = 0;
@@ -75,6 +77,12 @@ export class ArenaScene extends Phaser.Scene {
       yoyo: true,
     });
     this.guardian = this.add.image(285, 450, 'guardian').setScale(1.1).setDepth(450);
+    this.muzzle = this.add
+      .image(316, 421, 'impact')
+      .setScale(0.35)
+      .setTint(0xc8ffff)
+      .setDepth(895)
+      .setVisible(false);
     this.tweens.add({
       targets: this.guardian,
       angle: 2,
@@ -108,17 +116,31 @@ export class ArenaScene extends Phaser.Scene {
         this.effects.impact(event.at, event.lethal);
         this.combat.impact(event.id, event.lethal);
       }
+      if (event.type === 'spawn') this.effects.spawn(event.at, event.kind === 'boss');
+      if (event.type === 'meteor-landed') this.effects.meteorImpact(event.at);
+      if (event.type === 'heal')
+        this.effects.pulse(event.at, 0xb0ff8a, event.amount ? 210 : 130, 500);
+      if (event.type === 'boss-phase') this.effects.pulse(event.at, 0xff537b, 250, 500);
+      if (event.type === 'boss-interrupted') this.effects.pulse(event.at, 0xc3faff, 230, 530);
+      if (event.type === 'boss-defeated') this.effects.pulse(event.at, 0xffdb86, 470, 700);
+      if (event.type === 'boss-strike') this.effects.bossStrike(event.at);
+      if (event.type === 'crystal-hit') this.combat.attack(event.attackerId);
       if (event.type === 'spell') {
         if (event.effect === 'lightning') this.effects.lightning(event.targets);
-        if (event.effect === 'meteor')
-          this.effects.meteors(event.targets.length ? event.targets : [this.rules.state.player]);
         if (event.effect === 'nova') this.effects.nova(this.rules.state.player);
         if (event.effect === 'frost') this.effects.frost(this.rules.state.player);
       }
       if (event.type !== 'sound') return;
       if (event.sound === 'shot') {
-        this.guardian.setTintFill(0xd2ffff);
-        this.time.delayedCall(75, () => this.guardian.clearTint());
+        this.shotFlash?.stop();
+        this.muzzle.setScale(0.26).setAlpha(0.95).setVisible(true);
+        this.shotFlash = this.tweens.add({
+          targets: this.muzzle,
+          alpha: 0,
+          scale: 0.55,
+          duration: 120,
+          onComplete: () => this.muzzle.setVisible(false),
+        });
       }
       if (event.sound === 'hit') {
         if (!this.reducedMotion) this.cameras.main.shake(100, 0.002);
@@ -128,7 +150,6 @@ export class ArenaScene extends Phaser.Scene {
       if (event.sound === 'nova' && !this.reducedMotion) this.cameras.main.shake(180, 0.003);
       if (event.sound === 'boss') {
         if (!this.reducedMotion) this.cameras.main.shake(300, 0.003);
-        this.effects.nova(this.rules.state.player, 0xc6a4ff);
       }
     });
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
@@ -154,12 +175,13 @@ export class ArenaScene extends Phaser.Scene {
     this.glow.setPosition(cx, 390);
     this.crystal.setX(cx);
     this.guardian.setX(cx + 62);
+    this.muzzle.setPosition(cx + 91, this.rules.state.player.y + 11);
     this.torches.forEach((torch, i) =>
       torch
         .setPosition(cx + (i % 2 ? 1 : -1) * (width > 650 ? width * 0.39 : 168), i < 2 ? 260 : 580)
         .setDepth(i < 2 ? 260 : 580),
     );
-    this.combat.crystal.body!.reset(cx, 410);
+    this.combat.crystal.setPosition(cx, this.rules.state.player.y);
     this.combat.crystal.body!.updateFromGameObject();
   }
   update(_time: number, delta: number) {

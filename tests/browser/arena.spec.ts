@@ -96,11 +96,13 @@ test('touch interactions trigger visible freeze, healing, meteor and boss effect
   await page.getByRole('button', { name: 'Simulate Ice heart', exact: true }).click();
   await expect(page.locator('#gift-toast')).toContainText('FROZEN!');
   await page.getByRole('button', { name: 'Simulate Rose', exact: true }).click();
-  await expect(page.locator('#gift-toast')).toContainText('+25 HP');
+  await expect(page.locator('#gift-toast')).toContainText(/FULL HEALTH|\+\d+ HP/);
   await page.getByRole('button', { name: 'Simulate Meteor', exact: true }).click();
   await expect(page.locator('#gift-toast')).toContainText('METEOR!');
   await page.getByRole('button', { name: 'Simulate Crown', exact: true }).click();
   await expect(page.locator('#moment')).toHaveText('BOSS!');
+  await page.getByRole('button', { name: 'Simulate Crown', exact: true }).click();
+  await expect(page.locator('#gift-toast')).toContainText(/FULL HEALTH|\+\d+ HP/);
   expect(errors).toEqual([]);
 });
 

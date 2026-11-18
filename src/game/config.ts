@@ -1,13 +1,26 @@
 import type { EnemyKind, GiftKind, Skill } from './types';
 export const WORLD = { width: 450, height: 800, left: 32, right: 418, top: 125, bottom: 650 };
 export const COOLDOWNS: Record<Skill, number> = { nova: 12, frost: 18, lightning: 9 };
+export const LIKES_PER_STRIKE = 20;
+export const METEOR_FLIGHT = 0.65;
+export const CRYSTAL_RADIUS = 21;
 export const GIFTS: Record<
   GiftKind,
   { name: string; effect: string; color: string; icon: string }
 > = {
   rose: { name: 'Rose', effect: 'Restore 25 health', color: '#f48aab', icon: 'rose' },
-  ice: { name: 'Ice heart', effect: 'Freeze enemies · 5s', color: '#8edcfa', icon: 'ice' },
-  meteor: { name: 'Meteor', effect: 'Unleash a firestorm', color: '#ffb56c', icon: 'meteor' },
+  ice: {
+    name: 'Ice heart',
+    effect: 'Freeze enemies for 5s and interrupt the boss',
+    color: '#8edcfa',
+    icon: 'ice',
+  },
+  meteor: {
+    name: 'Meteor',
+    effect: 'Damage all enemies when it lands',
+    color: '#ffb56c',
+    icon: 'meteor',
+  },
   crown: { name: 'Crown', effect: 'Summon the Hollow King', color: '#e5ca80', icon: 'crown' },
 };
 export const ENEMIES: Record<
