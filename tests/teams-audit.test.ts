@@ -191,6 +191,15 @@ describe('audited game interaction cases', () => {
       });
     expect(b.apply(gift('reinforce')).accepted).toBe(false);
     expect(b.state.fighters).toHaveLength(MAX_FIGHTERS);
+    b.restart();
+    expect(
+      b.apply({
+        id: 'late-viewer',
+        type: 'join',
+        viewer: { id: 'late', name: 'Late viewer' },
+        team: 'blue',
+      }).accepted,
+    ).toBe(false);
   });
   test('pause freezes active timers; result-screen events are explicitly rejected, not silently queued', () => {
     const b = arena();
@@ -211,6 +220,27 @@ describe('audited game interaction cases', () => {
     expect(audienceEventSchema.safeParse({ ...gift('boost'), amount: 21 }).success).toBe(false);
     expect(audienceEventSchema.safeParse({ ...gift('boost'), amount: 0 }).success).toBe(false);
     expect(audienceEventSchema.safeParse({ ...gift('boost'), amount: 1.1 }).success).toBe(false);
+  });
+  test('raw cumulative counters cannot be silently discarded while defaulting a gift to one unit', () => {
+    expect(
+      audienceEventSchema.safeParse({
+        id: 'raw-streak',
+        type: 'gift',
+        viewer: red,
+        gift: 'boost',
+        repeatCount: 20,
+        repeatEnd: true,
+      }).success,
+    ).toBe(false);
+    expect(
+      audienceEventSchema.safeParse({
+        id: 'raw-like',
+        type: 'like',
+        viewer: red,
+        count: 1,
+        totalLikeCount: 10000,
+      }).success,
+    ).toBe(false);
   });
 });
 

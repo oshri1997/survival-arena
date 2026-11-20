@@ -80,7 +80,7 @@ npm run build:demo
 | GiftReceived            | `gift`         | `gift`: `reinforce`, `shield`, `meteor`, `boost`; `amount`: integer 1–20, default 1; optional `team` overrides viewer team |
 | Internal team selection | `join`         | `team`: `red` or `blue`                                                                                                    |
 
-Every event requires a stable unique `id` (1–160 chars), and a `viewer` with stable `id` (1–100 chars) and `name` (1–32 chars). Namespace event IDs by stream/session. The provider should send a completed gift streak once, or distinct incremental deltas, never cumulative repeat counts as separate gifts. Split quantities above 20 into uniquely identified batches; aggregate high-volume likes into batches up to 100. The endpoint allows 200 requests per 10 seconds per source IP. Respect 429 and retry the **same ID** with backoff.
+Event envelopes reject unrecognized fields; do not post raw provider objects or cumulative counters directly. Every event requires a stable unique `id` (1–160 chars), and a `viewer` with stable `id` (1–100 chars) and `name` (1–32 chars). Namespace event IDs by stream/session. The provider should send a completed gift streak once, or distinct incremental deltas, never cumulative repeat counts as separate gifts. Split quantities above 20 into uniquely identified batches; aggregate high-volume likes into batches up to 100. The endpoint allows 200 requests per 10 seconds per source IP. Respect 429 and retry the **same ID** with backoff.
 
 Examples from a connector host (keys are environment variables, not browser values):
 

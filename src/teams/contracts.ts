@@ -21,7 +21,7 @@ export const viewerSchema = z.object({
   avatar: httpsImage.optional(),
 });
 export type Viewer = z.infer<typeof viewerSchema>;
-const envelope = z.object({ id: z.string().min(1).max(160), viewer: viewerSchema });
+const envelope = z.object({ id: z.string().min(1).max(160), viewer: viewerSchema }).strict();
 export const audienceEventSchema = z.discriminatedUnion('type', [
   envelope.extend({ type: z.literal('viewerJoined') }),
   envelope.extend({ type: z.literal('chat'), message: z.string().trim().min(1).max(200) }),
