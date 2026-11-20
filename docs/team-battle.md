@@ -1,5 +1,7 @@
 # Red vs Blue · Team Arena
 
+Before connecting a real LIVE, read the [readiness audit and remaining gift-handling blockers](live-readiness-audit.md). Four internal effects do not yet provide a complete TikTok gift catalog or streak/round-boundary processing.
+
 A working, server-authoritative multiplayer broadcast game inspired by the red/blue territory format in the supplied reference. It is original code and artwork, not a copy of another game's assets. This mode is separate from the earlier fantasy crystal defense.
 
 ## Play
@@ -42,7 +44,7 @@ npm run build:demo
 - Avatars patrol independent waypoints throughout their own territory, with smooth acceleration, varied speeds and crowd separation. They keep roaming while firing at nearby opponents rather than chasing everyone into the frontier. The renderer and server share the same curved boundary, including when territory shrinks. Avatars lose health, earn kills/stars and respawn after 3 seconds. Combat resolves attacks together so roster order does not grant a first strike.
 - Each kill moves territory 1.2 percentage points. Reach 90% or lead when the two-minute timer ends to win. Results display for 8 seconds, then the next round starts automatically. Ties are draws. Viewers retain their teams.
 - **Reinforce**: three temporary allies per unit. **Shield**: 75% damage reduction for 6 seconds/unit, capped at 18 seconds. **Meteor**: 55 damage/unit to up to ten opponents near the front. **Boost**: double attack power for 8 seconds/unit, capped at 24 seconds.
-- Every 20 likes charges four seconds of power (16-second like cap). A follow heals living teammates by 25 HP.
+- Every 20 likes charges four seconds of power (16-second like cap, without shortening a longer gift boost). A follow heals living teammates by 25 HP.
 - Cap: 100 fighters including temporary allies. No prizes, gambling, paid random rewards or location tracking.
 - Sound starts after touching/clicking the game, as required by Safari. `M` toggles local sound. Original synthesized effects remain optional; all actions have visible feedback.
 
@@ -94,7 +96,7 @@ curl --fail-with-body "$ARENA_URL/api/teams/events" \
   --data '{"id":"stream1:gift:99","type":"gift","viewer":{"id":"42","name":"Luna"},"gift":"meteor","amount":1}'
 ```
 
-Success: `200 {"accepted":true,"duplicate":false}`. Repeating the same ID returns the stored outcome with `duplicate:true` without repeating gameplay. Rejected gameplay commands return 409 with a reason (e.g. not on a team, round result, arena full); invalid data 400, missing/wrong key 401, rate limit 429. Terminal rejected events are also recorded; send a new event ID for a genuinely new action. Deduplication retains the **latest 20,000 event receipts** across restarts; do not replay older history. Durable event application and its receipt commit in one SQLite transaction.
+Success: `200 {"accepted":true,"duplicate":false}`. Repeating the same ID/payload returns the stored outcome with `duplicate:true` without repeating gameplay. Reusing a new-format receipt ID with a changed payload returns 409; legacy receipts migrate but have no historical payload fingerprint. Rejected gameplay commands return 409 with a reason (e.g. not on a team, round result, arena full); invalid data 400, missing/wrong key 401, rate limit 429. Terminal rejected events are also recorded; send a new event ID for a genuinely new action. Deduplication retains the **latest 20,000 event receipts** across restarts; do not replay older history. Durable event application and its receipt commit in one SQLite transaction.
 
 ### Broadcast and production operation
 

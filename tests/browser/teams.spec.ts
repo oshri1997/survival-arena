@@ -105,15 +105,15 @@ test('networked team battle fills mobile screen; separate authenticated admin se
   await expect(admin.locator('#controls')).toBeVisible();
   await admin.getByRole('button', { name: 'Resume', exact: true }).click();
   await expect(page.locator('body')).toHaveAttribute('data-phase', 'battle');
+  const otherBlueCount = await other.locator('#blue-count').innerText();
+  await otherContext.close();
   // A disconnected viewer reconnects to the running round rather than starting a new simulation.
   const round = await page.locator('#round').textContent();
-  await page.reload();
+  await page.reload({ waitUntil: 'domcontentloaded' });
   await expect(page.locator('body')).toHaveAttribute('data-connected', 'true');
+  await expect(page.locator('#team-game canvas')).toBeVisible();
   await expect(page.locator('#round')).toHaveText(round!);
-  await expect(page.locator('#blue-count')).toHaveText(
-    await other.locator('#blue-count').innerText(),
-  );
-  await otherContext.close();
+  await expect(page.locator('#blue-count')).toHaveText(otherBlueCount);
   if (info.project.name === 'iphone-webkit')
     await page.screenshot({ path: `test-results/${info.project.name}-teams.png` });
   await admin.screenshot({

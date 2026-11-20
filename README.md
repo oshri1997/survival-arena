@@ -4,6 +4,8 @@
 
 [Play the updated movement demo](https://oshri-survival-arena-patrol.mikaoshriai.chatgpt.site) (owner-private local simulation). Avatars patrol their own territory with smooth steering and continue shooting at nearby opponents.
 
+Before using real viewer gifts, read the [LIVE readiness audit](docs/live-readiness-audit.md). Gift-ID catalog mapping, streak normalization and durable pending-gift handling still need integration work.
+
 A game-first fantasy defense arena for TikTok LIVE-style broadcasts. The game opens directly into combat, fills the viewport, and shows only **wave, crystal health and four viewer interactions**. The guardian defends automatically; waves, upgrades and new rounds continue without menus.
 
 TikTok interactions are **simulated** in both modes. No TikTok account, credentials, payment integration or real live event connector is present. The crystal game below uses local events; Team Arena supports a shared server.

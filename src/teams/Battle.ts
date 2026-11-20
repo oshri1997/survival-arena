@@ -104,8 +104,7 @@ export class Battle {
           );
           owner.team = team;
           Object.assign(owner, this.position(team));
-          owner.hp = owner.maxHp;
-          owner.respawn = 0;
+          // Changing a chat keyword must not heal a fighter or bypass the respawn timer.
           owner.vx = owner.vy = 0;
           this.patrol.reset(owner.id);
           this.announce(owner.name, 'switched teams', team);
@@ -128,7 +127,10 @@ export class Battle {
       if (this.state.likes[eventTeam] >= 20) {
         const charges = Math.floor(this.state.likes[eventTeam] / 20);
         this.state.likes[eventTeam] %= 20;
-        this.state.boosts[eventTeam] = Math.min(16, this.state.boosts[eventTeam] + 4 * charges);
+        this.state.boosts[eventTeam] = Math.max(
+          this.state.boosts[eventTeam],
+          Math.min(16, this.state.boosts[eventTeam] + 4 * charges),
+        );
         this.effect({ type: 'boost', team: eventTeam, x: eventTeam === 'red' ? 90 : 390, y: 400 });
         this.announce(event.viewer.name, 'charged team power', eventTeam);
       }
