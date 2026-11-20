@@ -31,3 +31,7 @@ These are finished, original assets for a stylized vector vertical slice, rather
 For commercial art completion, replace or expand the sources with: painted stone/bark/moss materials, richer plant variation, dedicated anticipation/attack/hurt/death clips for all four enemies, a full boss intro and phase transition, mage cast animations, and a mastered ambient music/SFX set. Keep source provenance and licenses beside new assets. Do not substitute copyrighted characters.
 
 The LIVE redesign brightens the floor, increases character scale, gives enemies warm/red or purple palettes, and gives the guardian a blue cloak. A separate wide arena prevents a portrait scene from becoming a narrow strip on desktop. Palettized environment PNGs reduce mobile download size. Original fireball, bolt and impact textures support the larger effects.
+
+## Team Arena assets
+
+`src/teams/avatars.ts` draws original illustrated human, cat and owl profile avatars using the Canvas API. `src/teams/TeamScene.ts` draws the original hex field and combat effects. These original drawings are also dedicated under CC0 1.0; no images from the supplied TikTok screenshot are reused. Optional future provider profile images remain external content and are not covered by this dedication.

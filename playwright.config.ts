@@ -21,5 +21,16 @@ export default defineConfig({
   webServer: [
     { command: 'npm run preview -- --port 4173', port: 4173, reuseExistingServer: false },
     { command: 'npm run dev -- --port 5175', port: 5175, reuseExistingServer: false },
+    ...[8787, 8788].map((port) => ({
+      command: 'npm run teams:server',
+      port,
+      reuseExistingServer: false,
+      env: {
+        PORT: String(port),
+        TEAM_ADMIN_KEY: 'browser-test-admin',
+        TEAM_EVENT_KEY: 'browser-test-events',
+        TEAM_STATE_PATH: ':memory:',
+      },
+    })),
   ],
 });
