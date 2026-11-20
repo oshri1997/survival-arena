@@ -30,18 +30,27 @@ test('networked team battle fills mobile screen; separate authenticated admin se
         }),
       )
       .toBeLessThan(3);
-    expect(
-      await page
-        .locator('#team-game canvas')
-        .evaluate((c) => (c.clientWidth * c.clientHeight) / (innerWidth * innerHeight)),
-    ).toBeGreaterThanOrEqual(0.8);
-    expect(
-      await page.evaluate(
-        () =>
-          document.documentElement.scrollWidth <= innerWidth &&
-          document.documentElement.scrollHeight <= innerHeight,
-      ),
-    ).toBe(true);
+    // Safari can update the visual viewport before its layout viewport during rotation.
+    await expect
+      .poll(() =>
+        page
+          .locator('#team-game canvas')
+          .evaluate(
+            (c) =>
+              (c.clientWidth * c.clientHeight) /
+              ((visualViewport?.width || innerWidth) * (visualViewport?.height || innerHeight)),
+          ),
+      )
+      .toBeGreaterThanOrEqual(0.8);
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () =>
+            document.documentElement.scrollWidth <= innerWidth &&
+            document.documentElement.scrollHeight <= innerHeight,
+        ),
+      )
+      .toBe(true);
     if (size.height === 1920) {
       expect(await page.locator('#red-share').evaluate((el) => getComputedStyle(el).fontSize)).toBe(
         '90px',
