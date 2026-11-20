@@ -78,7 +78,16 @@ test('networked team battle fills mobile screen; separate authenticated admin se
   await admin.getByRole('button', { name: 'Sign in', exact: true }).click();
   await expect(admin.locator('#controls')).toBeVisible();
   await expect(admin.locator('body')).toHaveAttribute('data-connected', 'true');
+  // Keep old WebSocket snapshots flowing while the setting request is deliberately delayed.
+  await admin.route('**/api/teams/admin/actions', async (route) => {
+    if (route.request().postDataJSON().type === 'autoplay')
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    await route.continue();
+  });
   await admin.locator('#autoplay').uncheck();
+  await expect(admin.locator('#autoplay')).not.toBeChecked();
+  await expect(admin.locator('#autoplay')).toBeEnabled();
+  await admin.unroute('**/api/teams/admin/actions');
   await admin.getByRole('button', { name: 'New round', exact: true }).click();
   await admin.getByRole('button', { name: 'Pause', exact: true }).click();
   await expect(page.locator('body')).toHaveAttribute('data-phase', 'paused');

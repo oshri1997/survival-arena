@@ -8,31 +8,37 @@ The game accepts normalized mock/connector events. **It is not yet connected to 
 - Switching teams preserves wounds and a pending respawn timer. Repeating chat keywords cannot refill health or resurrect a defeated avatar.
 - New durable receipts include a SHA-256 fingerprint of the normalized payload. Repeating a matching ID/payload returns its stored result; reusing that ID with a different payload returns a conflict without applying it. Existing SQLite databases migrate in place. Legacy receipts without a fingerprint still suppress retries but cannot detect historical payload collisions.
 - Normalized event envelopes now reject extra fields. Raw `repeatCount`/`repeatEnd`/`totalLikeCount` fields cannot be silently discarded while applying an incorrect default quantity. The provider adapter must explicitly normalize them.
+- Admin automatic-event controls retain the requested value while awaiting both HTTP acknowledgement and a matching WebSocket snapshot. Stale snapshots no longer undo a click; failed/timed-out requests recover to the latest observed server state.
+- Production startup requires explicit admin/event keys. Integration tests launch the actual Node process, kill it after acknowledging a gift, reopen its persistent database, and verify receipt deduplication plus session invalidation.
 - Receipt pruning now breaks identical timestamp ties with insertion order, preserving the newest receipts deterministically.
 
 ## Checked behavior and boundaries
 
-| Case                                                       | Verified behavior / coverage                                                           |
-| ---------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| `red`, `blue`, `1`, `2`, case and surrounding spaces       | Team selection; one main avatar per viewer ID                                          |
-| Ordinary chat / viewer arrival                             | No team combat power; arrival alone does not select a team                             |
-| Likes at 19/20/21/40/100                                   | Threshold, remainder, duration caps and separate team totals                           |
-| Likes from multiple teammates                              | Combined team charge; no power credited to the opposite side                           |
-| Likes while gift power is already 24 seconds               | Existing power preserved; no accidental reduction                                      |
-| Follow                                                     | Heal living teammates by up to 25 HP; no over-heal or revival                          |
-| Team switch with wounds / while defeated                   | Health and respawn delay preserved; old temporary allies removed                       |
-| All four effects, quantity 1 and 20                        | Valid normalized quantities; bounded health, timers and fighter counts                 |
-| Shield                                                     | 75% ordinary/meteor damage reduction, cap and timer expiry                             |
-| Meteor                                                     | At most ten living opponents; no friendly damage; one score per defeated opponent      |
-| Gift targeting a team different from the sender's          | No kill credit to a sender fighting for the opposing team                              |
-| Reinforcements                                             | Three temporary allies per unit, bounded at 100 fighters; defeated allies expire       |
-| Pause                                                      | Simulation and buff countdowns freeze; event ingestion remains available during battle |
-| Same event ID/payload, including reordered object fields   | Idempotent durable receipt                                                             |
-| Same event ID with a changed quantity                      | Explicit conflict; no second gameplay application                                      |
-| Process/storage reopen and existing schema                 | Persisted receipts and state; compatible fingerprint migration                         |
-| Authorization / bad payload / wrong origin                 | Existing server tests cover rejection, admin login/logout and read-only viewer sockets |
-| Motion, combat, scores, results, automatic restart         | Existing engine/patrol tests and browser scenarios                                     |
-| Browser reload / different viewer browsers / mobile layout | Existing Chromium and iPhone-emulated WebKit coverage; no physical-phone claim         |
+| Case                                                       | Verified behavior / coverage                                                                                                                                                                      |
+| ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `red`, `blue`, `1`, `2`, case and surrounding spaces       | Team selection; one main avatar per viewer ID                                                                                                                                                     |
+| Ordinary chat / viewer arrival                             | No team combat power; arrival alone does not select a team                                                                                                                                        |
+| Likes at 19/20/21/40/100                                   | Threshold, remainder, duration caps and separate team totals                                                                                                                                      |
+| Likes from multiple teammates                              | Combined team charge; no power credited to the opposite side                                                                                                                                      |
+| Likes while gift power is already 24 seconds               | Existing power preserved; no accidental reduction                                                                                                                                                 |
+| Follow                                                     | Heal living teammates by up to 25 HP; no over-heal or revival                                                                                                                                     |
+| Team switch with wounds / while defeated                   | Health and respawn delay preserved; old temporary allies removed                                                                                                                                  |
+| All four effects, quantity 1 and 20                        | Valid normalized quantities; bounded health, timers and fighter counts                                                                                                                            |
+| Shield                                                     | 75% ordinary/meteor damage reduction, cap and timer expiry                                                                                                                                        |
+| Meteor                                                     | At most ten living opponents; no friendly damage; one score per defeated opponent                                                                                                                 |
+| Gift targeting a team different from the sender's          | No kill credit to a sender fighting for the opposing team                                                                                                                                         |
+| Reinforcements                                             | Three temporary allies per unit, bounded at 100 fighters; defeated allies expire                                                                                                                  |
+| Pause                                                      | Simulation and buff countdowns freeze; event ingestion remains available during battle                                                                                                            |
+| Same event ID/payload, including reordered object fields   | Idempotent durable receipt                                                                                                                                                                        |
+| Same event ID with a changed quantity                      | Explicit conflict; no second gameplay application                                                                                                                                                 |
+| Process/storage reopen and existing schema                 | Persisted receipts and state; compatible fingerprint migration                                                                                                                                    |
+| Authorization / bad payload / wrong origin                 | Existing server tests cover rejection, admin login/logout and read-only viewer sockets                                                                                                            |
+| Motion, combat, scores, results, automatic restart         | Existing engine/patrol tests and browser scenarios                                                                                                                                                |
+| Actual process crash/restart                               | Acknowledged gift retained after SIGKILL; same receipt not applied twice; old admin session revoked; graceful shutdown verified                                                                   |
+| Production without server keys                             | Fails before opening the game; configured keys are not printed                                                                                                                                    |
+| Synthetic full arena                                       | 100 fighters through 30 simulated seconds of gift bursts, deaths and round transitions; state/effects bounded and positions valid. This is not a device FPS or real-provider throughput benchmark |
+| Admin toggle under delayed HTTP acknowledgement            | Old snapshots cannot undo the click; both response orders, errors and late acknowledgements covered                                                                                               |
+| Browser reload / different viewer browsers / mobile layout | Existing Chromium and iPhone-emulated WebKit coverage; no physical-phone claim                                                                                                                    |
 
 ## Open blockers before using real viewer gifts
 

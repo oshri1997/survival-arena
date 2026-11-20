@@ -13,7 +13,7 @@ npm ci
 npm run teams
 ```
 
-Open `http://localhost:8787/teams.html`. Admin: `/teams-admin.html`. On this server `/` also opens the team game; `/index.html` retains crystal defense. Missing keys are generated and printed **only in the server terminal**. Configured keys are never printed or included in Vite output. To set stable keys:
+Open `http://localhost:8787/teams.html`. Admin: `/teams-admin.html`. On this server `/` also opens the team game; `/index.html` retains crystal defense. In development, missing keys are generated and printed **only in the server terminal**. With `NODE_ENV=production`, both keys must be configured or startup fails. Configured keys are never printed or included in Vite output. To set stable keys:
 
 ```sh
 cp .env.example .env
@@ -111,6 +111,15 @@ docker build -t survival-arena .
 docker volume create arena-data
 docker run -d --name arena --restart unless-stopped \
   --env-file .env -p 8787:8787 -v arena-data:/app/data survival-arena
+```
+
+For a Node host without Docker, install build dependencies explicitly before starting the production process:
+
+```sh
+npm ci --include=dev
+npm run build
+# Set .env to production keys, a fresh persistent state file and both demo flags=false.
+NODE_ENV=production node --env-file=.env --import tsx server/index.ts
 ```
 
 Put a TLS reverse proxy in front and forward `/api/teams/socket` upgrades. Node serves both the production static assets and API on one origin. The Docker image is supplied for deployment. On networks with a corporate TLS proxy, the optional BuildKit secret `--secret id=npm_ca,src=/path/to/trusted-ca.pem` trusts that CA only during dependency installation; it is not copied into the image. See PR validation for build/run results.

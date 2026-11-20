@@ -1,4 +1,5 @@
 import { TeamClient, post } from './Client';
+import { ConfirmedToggle } from './ConfirmedToggle';
 import { GIFTS, type AdminAction, type Team, type TeamGift } from './contracts';
 import './style.css';
 
@@ -15,6 +16,8 @@ document.getElementById('app')!.innerHTML =
     )}</div><form id="chat-form" class="chat-form"><input id="chat" placeholder="red, blue, 1 or 2" aria-label="Viewer chat" maxlength="200"><button>Send chat</button></form></section><section class="control-card"><h2>Participants <span id="roster-count"></span></h2><div id="roster" class="roster"></div></section><section class="control-card"><h2>Event feed</h2><ol id="event-feed" class="event-feed"></ol></section><p class="control-intro">API input is ready at <code>POST /api/teams/events</code>. The event bearer key stays on the server. Connect your TikTok event provider to this endpoint using the documented event contract.</p></section></main>`;
 const el = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const client = new TeamClient();
+const autoplay = new ConfirmedToggle();
+let autoplayTimeout: ReturnType<typeof setTimeout> | undefined;
 let signedIn = false,
   lastActivity = 0;
 function error(message: string) {
@@ -25,6 +28,17 @@ function session(authenticated: boolean) {
   signedIn = authenticated;
   el('controls').hidden = !authenticated;
   el('login-panel').hidden = authenticated;
+  renderAutoplay();
+}
+function renderAutoplay() {
+  const input = el<HTMLInputElement>('autoplay');
+  input.checked = autoplay.value;
+  input.disabled = !signedIn || !client.connected || autoplay.pending;
+  input.setAttribute('aria-busy', String(autoplay.pending));
+  if (!autoplay.pending) {
+    clearTimeout(autoplayTimeout);
+    autoplayTimeout = undefined;
+  }
 }
 async function action(input: AdminAction) {
   try {
@@ -61,9 +75,25 @@ el('pause').addEventListener('click', () => action({ type: 'pause', paused: true
 el('resume').addEventListener('click', () => action({ type: 'pause', paused: false }));
 el('restart').addEventListener('click', () => action({ type: 'restart' }));
 el('crowd').addEventListener('click', () => action({ type: 'crowd', count: 8 }));
-el('autoplay').addEventListener('change', () =>
-  action({ type: 'autoplay', enabled: el<HTMLInputElement>('autoplay').checked }),
-);
+el('autoplay').addEventListener('change', async () => {
+  const enabled = el<HTMLInputElement>('autoplay').checked;
+  const revision = autoplay.request(enabled);
+  if (revision === undefined) return;
+  renderAutoplay();
+  autoplayTimeout = setTimeout(() => {
+    autoplay.cancel(revision);
+    renderAutoplay();
+    error('The server did not confirm the setting. Check your connection.');
+  }, 8000);
+  try {
+    await post('/api/teams/admin/actions', { type: 'autoplay', enabled });
+    autoplay.acknowledge(revision);
+  } catch (e) {
+    autoplay.cancel(revision);
+    error(e instanceof Error ? e.message : 'Unable to change automatic events');
+  }
+  renderAutoplay();
+});
 const viewer = () => ({
   id: el<HTMLInputElement>('viewer-id').value.trim(),
   name: el<HTMLInputElement>('viewer-name').value.trim(),
@@ -116,7 +146,8 @@ client.onState((state) => {
     `Round ${state.round} · ${state.paused ? 'paused' : state.phase}`;
   el('control-players').textContent =
     `${state.fighters.filter((f) => !f.temporary).length} viewers`;
-  el<HTMLInputElement>('autoplay').checked = state.autoplay;
+  autoplay.receive(state.autoplay);
+  renderAutoplay();
   const roster = el('roster');
   roster.replaceChildren();
   for (const fighter of state.fighters.filter((f) => !f.temporary)) {
@@ -145,6 +176,7 @@ client.onState((state) => {
 const monitor = setInterval(() => {
   el('server-status').textContent = client.connected ? '● Server connected' : '○ Reconnecting';
   document.body.dataset.connected = String(client.connected);
+  renderAutoplay();
   document
     .querySelectorAll<HTMLButtonElement>('#controls button')
     .forEach((b) => (b.disabled = !client.connected || !signedIn));
@@ -152,5 +184,6 @@ const monitor = setInterval(() => {
 if (import.meta.hot)
   import.meta.hot.dispose(() => {
     clearInterval(monitor);
+    clearTimeout(autoplayTimeout);
     client.dispose();
   });
