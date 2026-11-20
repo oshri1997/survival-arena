@@ -16,6 +16,7 @@ test('networked team battle fills mobile screen; separate authenticated admin se
     { width: 390, height: 844 },
     { width: 430, height: 932 },
     { width: 844, height: 390 },
+    { width: 1080, height: 1920 },
   ]) {
     await page.setViewportSize(size);
     await expect
@@ -41,6 +42,14 @@ test('networked team battle fills mobile screen; separate authenticated admin se
           document.documentElement.scrollHeight <= innerHeight,
       ),
     ).toBe(true);
+    if (size.height === 1920) {
+      expect(await page.locator('#red-share').evaluate((el) => getComputedStyle(el).fontSize)).toBe(
+        '90px',
+      );
+      expect(await page.locator('.join-red').evaluate((el) => getComputedStyle(el).fontSize)).toBe(
+        '25px',
+      );
+    }
   }
   await page.setViewportSize({ width: 430, height: 932 });
   await page.getByRole('button', { name: 'JOIN RED' }).click();

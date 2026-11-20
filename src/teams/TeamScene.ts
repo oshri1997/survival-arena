@@ -127,7 +127,7 @@ export class TeamScene extends Phaser.Scene {
     this.radius = Phaser.Math.Clamp(
       Math.min(width / WORLD.width, height / WORLD.height) * 23,
       16,
-      35,
+      60,
     );
     this.territory = Phaser.Math.Linear(this.territory, state.territory, Math.min(1, dt * 5));
     const boardKey = `${width}:${height}:${Math.round((this.territory * width) / 2)}:${state.round}`;
@@ -150,9 +150,10 @@ export class TeamScene extends Phaser.Scene {
       actor.image.setPosition(x, y).setDisplaySize(radius * 2 - 5, radius * 2 - 5);
       actor.ring.setPosition(x, y).setRadius(radius).setFillStyle(color(f.team), 0.12);
       actor.label.setPosition(x, y + radius + 11);
-      const fontSize = width > 700 ? 12 : 9;
+      const fontSize = Math.round(this.radius * 0.45);
       if (actor.label.style.fontSize !== `${fontSize}px`) actor.label.setFontSize(fontSize);
       actor.level.setPosition(x, y - radius - 15);
+      if (actor.level.style.fontSize !== `${fontSize}px`) actor.level.setFontSize(fontSize);
       const h = actor.health;
       h.fillStyle(0x071b26, 0.9);
       h.fillRoundedRect(x - radius * 0.7, y - radius - 6, radius * 1.4, 4, 2);
@@ -173,7 +174,11 @@ export class TeamScene extends Phaser.Scene {
   private drawBoard(width: number, height: number) {
     const g = this.board;
     g.clear();
-    const size = width < 700 ? 25 : 34,
+    const size = Phaser.Math.Clamp(
+        Math.min(width / WORLD.width, height / WORLD.height) * 28,
+        22,
+        65,
+      ),
       dx = Math.sqrt(3) * size,
       dy = 1.5 * size;
     for (let row = -1; row < height / dy + 1; row++)
