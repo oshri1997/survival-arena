@@ -2,6 +2,8 @@
 
 **New: Red vs Blue Team Arena** — the server-synchronized viewer battle inspired by the supplied TikTok reference. Run `npm ci && npm run teams`, open `/teams.html`, and use `/teams-admin.html` for protected controls. Includes persistent rounds, original profile avatars, territory combat, four gifts and an authenticated event ingestion endpoint. No real TikTok connection is active. See [setup, API contract and Node deployment](docs/team-battle.md). For a static playable preview use `/teams-demo.html` or `npm run build:demo` and publish `dist-demo/`; this is explicitly local and has no shared server. The existing crystal defense below remains available at `/index.html`.
 
+[Play the updated movement demo](https://oshri-survival-arena-patrol.mikaoshriai.chatgpt.site) (owner-private local simulation). Avatars patrol their own territory with smooth steering and continue shooting at nearby opponents.
+
 A game-first fantasy defense arena for TikTok LIVE-style broadcasts. The game opens directly into combat, fills the viewport, and shows only **wave, crystal health and four viewer interactions**. The guardian defends automatically; waves, upgrades and new rounds continue without menus.
 
 TikTok interactions are **simulated** in both modes. No TikTok account, credentials, payment integration or real live event connector is present. The crystal game below uses local events; Team Arena supports a shared server.

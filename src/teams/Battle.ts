@@ -1,5 +1,7 @@
 import { MAX_FIGHTERS, ROUND_SECONDS, WORLD } from './contracts';
 import type { AudienceEvent, BattleEffect, BattleState, Fighter, Team, Viewer } from './contracts';
+import { Patrol } from './Patrol';
+import { FIELD, territoryRange } from './territory';
 
 export interface EventResult {
   accepted: boolean;
@@ -13,10 +15,12 @@ const clamp = (value: number, minimum: number, maximum: number) =>
 export class Battle {
   state: BattleState;
   private nextFighter = 0;
+  private patrol: Patrol;
   constructor(
     private random: () => number = Math.random,
     restored?: BattleState,
   ) {
+    this.patrol = new Patrol(this.random);
     this.state = restored ?? {
       round: 1,
       remaining: ROUND_SECONDS,
@@ -38,6 +42,7 @@ export class Battle {
       0,
       ...this.state.fighters.map((f) => Number(f.id.replace('fighter-', '')) || 0),
     );
+    this.patrol.constrain(this.state.fighters, this.state.territory, this.state.round);
   }
   private effect(effect: Omit<BattleEffect, 'id'>) {
     this.state.effects.push({ ...effect, id: ++this.state.sequence });
@@ -48,11 +53,11 @@ export class Battle {
     this.state.activity = this.state.activity.slice(0, 20);
   }
   private position(team: Team) {
-    const front = this.state.territory * WORLD.width;
-    const distance = 65 + this.random() * 110;
+    const y = FIELD.top + this.random() * (FIELD.bottom - FIELD.top);
+    const range = territoryRange(team, y, this.state.territory, this.state.round);
     return {
-      x: clamp(front + (team === 'red' ? -distance : distance), 32, WORLD.width - 32),
-      y: 125 + this.random() * 510,
+      x: range.min + this.random() * (range.max - range.min),
+      y,
     };
   }
   private create(viewer: Viewer, team: Team, temporary = false): Fighter {
@@ -101,6 +106,8 @@ export class Battle {
           Object.assign(owner, this.position(team));
           owner.hp = owner.maxHp;
           owner.respawn = 0;
+          owner.vx = owner.vy = 0;
+          this.patrol.reset(owner.id);
           this.announce(owner.name, 'switched teams', team);
         }
         return { accepted: true };
@@ -164,6 +171,7 @@ export class Battle {
           .slice(0, 10);
         for (const enemy of enemies)
           this.damage(enemy, 55 * event.amount, owner?.team === eventTeam ? owner : undefined);
+        this.patrol.constrain(this.state.fighters, this.state.territory, this.state.round);
       }
       this.announce(event.viewer.name, `sent ${event.gift}`, eventTeam);
     }
@@ -172,9 +180,10 @@ export class Battle {
   private damage(target: Fighter, amount: number, attacker?: Fighter) {
     if (target.hp <= 0) return;
     target.hp = Math.max(0, target.hp - amount * (this.state.shields[target.team] > 0 ? 0.25 : 1));
-    this.effect({ type: 'hit', team: target.team, x: target.x, y: target.y });
+    this.effect({ type: 'hit', team: target.team, x: target.x, y: target.y, fighterId: target.id });
     if (target.hp > 0) return;
     target.respawn = 3;
+    target.vx = target.vy = 0;
     const winningTeam = opposite(target.team);
     this.state.scores[winningTeam]++;
     this.state.territory = clamp(
@@ -202,12 +211,14 @@ export class Battle {
     s.likes = { red: 0, blue: 0 };
     s.fighters = s.fighters.filter((f) => !f.temporary);
     s.effects = [];
+    this.patrol.reset();
     for (const f of s.fighters) {
       Object.assign(f, this.position(f.team));
       f.hp = f.maxHp = 100;
       f.level = 1;
       f.kills = 0;
       f.respawn = 0;
+      f.vx = f.vy = 0;
     }
     this.announce('Arena', `Round ${s.round} started`);
   }
@@ -224,7 +235,7 @@ export class Battle {
       s.shields[team] = Math.max(0, s.shields[team] - dt);
       s.boosts[team] = Math.max(0, s.boosts[team] - dt);
     }
-    const attacks: { target: Fighter; amount: number; attacker: Fighter }[] = [];
+    const respawned = new Set<string>();
     for (const f of [...s.fighters]) {
       if (f.hp <= 0) {
         f.respawn -= dt;
@@ -233,11 +244,18 @@ export class Battle {
           else {
             Object.assign(f, this.position(f.team));
             f.hp = f.maxHp;
+            f.vx = f.vy = 0;
+            this.patrol.reset(f.id);
+            respawned.add(f.id);
             this.effect({ type: 'join', team: f.team, x: f.x, y: f.y });
           }
         }
-        continue;
       }
+    }
+    this.patrol.update(s.fighters, dt, s.territory, s.round);
+    const attacks: { target: Fighter; amount: number; attacker: Fighter }[] = [];
+    for (const f of s.fighters) {
+      if (f.hp <= 0 || respawned.has(f.id)) continue;
       let target: Fighter | undefined,
         distance = Infinity;
       for (const other of s.fighters) {
@@ -249,7 +267,7 @@ export class Battle {
         }
       }
       f.cooldown = Math.max(0, f.cooldown - dt);
-      if (target && distance < 115) {
+      if (target && distance < 180) {
         if (f.cooldown === 0) {
           f.cooldown = 0.65;
           this.effect({
@@ -259,6 +277,7 @@ export class Battle {
             y: f.y,
             targetX: target.x,
             targetY: target.y,
+            fighterId: f.id,
           });
           attacks.push({
             target,
@@ -266,27 +285,11 @@ export class Battle {
             attacker: f,
           });
         }
-      } else if (target) {
-        const move = Math.min(distance - 85, dt * 37);
-        f.x += ((target.x - f.x) / distance) * move;
-        f.y += ((target.y - f.y) / distance) * move;
       }
-      // Local separation keeps faces readable while fighters converge on the front.
-      for (const other of s.fighters) {
-        if (other.id === f.id || other.hp <= 0) continue;
-        const dx = f.x - other.x,
-          dy = f.y - other.y,
-          d = Math.hypot(dx, dy);
-        if (d > 0.1 && d < 38) {
-          f.x += (dx / d) * dt * 22;
-          f.y += (dy / d) * dt * 22;
-        }
-      }
-      f.x = clamp(f.x, 24, WORLD.width - 24);
-      f.y = clamp(f.y, 110, 675);
     }
     // Resolve after everyone chooses an attack, so roster order gives neither team a first strike.
     for (const attack of attacks) this.damage(attack.target, attack.amount, attack.attacker);
+    this.patrol.constrain(s.fighters, s.territory, s.round);
     const won = s.territory >= 0.9 ? 'red' : s.territory <= 0.1 ? 'blue' : null;
     if (won || s.remaining === 0) {
       s.winner =

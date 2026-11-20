@@ -25,6 +25,8 @@ The seeded demo has 24 fictional viewers and automatic shield/power events. Join
 
 ## Static playable preview
 
+[Updated movement demo](https://oshri-survival-arena-patrol.mikaoshriai.chatgpt.site) is hosted as an owner-private Site. It is the local simulation below, not the authoritative Node server. The generated preview checkout is `/workspace/sites/survival-arena-patrol`; its tracked `.openai/hosting.json` retains the Site identity for later updates. Publish a fresh `dist-demo/` build through that checkout when updating the preview.
+
 `/teams-demo.html` is an explicitly labeled **LOCAL DEMO** using the same rules and renderer inside the browser. It starts immediately, accepts team joins and simulates all four gifts. It makes no API calls, has no server/admin access, and resets on refresh. Each visitor has an independent demo. It is intentionally separate from `/teams.html`, which always requires the authoritative server and never silently falls back.
 
 ```sh
@@ -37,7 +39,7 @@ npm run build:demo
 ## Game rules
 
 - Chat `red` / `1` or `blue` / `2` selects a side. One persistent fighter per viewer ID; switching sides removes that viewer's old temporary allies.
-- Avatars seek enemies, shoot, lose health, earn kills/stars and respawn after 3 seconds. Combat resolves attacks together so roster order does not grant a first strike.
+- Avatars patrol independent waypoints throughout their own territory, with smooth acceleration, varied speeds and crowd separation. They keep roaming while firing at nearby opponents rather than chasing everyone into the frontier. The renderer and server share the same curved boundary, including when territory shrinks. Avatars lose health, earn kills/stars and respawn after 3 seconds. Combat resolves attacks together so roster order does not grant a first strike.
 - Each kill moves territory 1.2 percentage points. Reach 90% or lead when the two-minute timer ends to win. Results display for 8 seconds, then the next round starts automatically. Ties are draws. Viewers retain their teams.
 - **Reinforce**: three temporary allies per unit. **Shield**: 75% damage reduction for 6 seconds/unit, capped at 18 seconds. **Meteor**: 55 damage/unit to up to ten opponents near the front. **Boost**: double attack power for 8 seconds/unit, capped at 24 seconds.
 - Every 20 likes charges four seconds of power (16-second like cap). A follow heals living teammates by 25 HP.
@@ -117,6 +119,7 @@ Put a TLS reverse proxy in front and forward `/api/teams/socket` upgrades. Node 
 
 - `src/teams/contracts.ts`: validated event protocol, limits and state types.
 - `src/teams/Battle.ts`: renderer-free combat/round rules; sole authority on the server.
+- `src/teams/Patrol.ts`, `territory.ts`: autonomous steering, collision avoidance and shared territory constraints. Old saved games without velocity fields remain readable; new patrol routes are chosen after a server restart.
 - `server/app.ts`: HTTP authentication, ingestion, mock automation, static hosting, 20 Hz simulation, 10 Hz snapshots and WebSocket backpressure.
 - `server/store.ts`: SQLite WAL state/receipts; one-second routine checkpoints, immediate writes for event/admin commands. Sudden power loss may lose up to one second of ordinary combat, but acknowledged event writes are transactional.
 - `src/teams/Client.ts`: same-origin WebSocket client, automatic reconnect and fresh state after reconnect.

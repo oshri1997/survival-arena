@@ -44,12 +44,9 @@ describe('team battle rules', () => {
     expect(battle.state.fighters).toHaveLength(1);
     expect(battle.state.fighters[0]).toMatchObject({ ownerId: viewer.id, team: 'blue' });
   });
-  test('fighters approach opponents, attack, score, respawn and resolve simultaneous attacks fairly', () => {
+  test('fighters attack, score, respawn and resolve simultaneous attacks fairly', () => {
     const battle = joined();
     const [red, blue] = battle.state.fighters;
-    const start = red.x;
-    battle.update(0.1);
-    expect(red.x).toBeGreaterThan(start);
     Object.assign(red, { x: 220, y: 300, hp: 12, cooldown: 0 });
     Object.assign(blue, { x: 280, y: 300, hp: 12, cooldown: 0 });
     battle.update(0.05);

@@ -53,6 +53,8 @@ export interface Fighter {
   team: Team;
   x: number;
   y: number;
+  vx?: number;
+  vy?: number;
   hp: number;
   maxHp: number;
   level: number;
@@ -69,6 +71,7 @@ export interface BattleEffect {
   y: number;
   targetX?: number;
   targetY?: number;
+  fighterId?: string;
 }
 export interface BattleActivity {
   id: number;
