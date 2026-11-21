@@ -172,7 +172,7 @@ describe('audited game interaction cases', () => {
     expect(b.state.scores.blue).toBe(1);
     expect(b.state.fighters[0].kills).toBe(0);
   });
-  test('temporary reinforcements disappear after defeat; arena capacity gives explicit rejection', () => {
+  test('temporary reinforcements disappear after defeat; ally capacity reports explicit cosmetic acknowledgement', () => {
     const b = arena();
     b.apply(gift('reinforce'));
     const ids = b.state.fighters.filter((f) => f.temporary).map((f) => f.id);
@@ -189,7 +189,11 @@ describe('audited game interaction cases', () => {
         viewer: { id: `v${i}`, name: 'Viewer' },
         team: 'red',
       });
-    expect(b.apply(gift('reinforce')).accepted).toBe(false);
+    expect(b.apply(gift('reinforce'))).toMatchObject({
+      accepted: true,
+      status: 'cosmetic',
+      details: { spawned: 0 },
+    });
     expect(b.state.fighters).toHaveLength(MAX_FIGHTERS);
     b.restart();
     expect(
@@ -201,7 +205,7 @@ describe('audited game interaction cases', () => {
       }).accepted,
     ).toBe(false);
   });
-  test('pause freezes active timers; result-screen events are explicitly rejected, not silently queued', () => {
+  test('pure combat freezes on pause and delegates intermission delivery to the durable server inbox', () => {
     const b = arena();
     b.apply(gift('shield'));
     b.state.paused = true;
@@ -217,7 +221,9 @@ describe('audited game interaction cases', () => {
     expect(
       audienceEventSchema.safeParse({ ...gift('boost'), gift: 'Rose', giftId: 5655 }).success,
     ).toBe(false);
-    expect(audienceEventSchema.safeParse({ ...gift('boost'), amount: 21 }).success).toBe(false);
+    expect(audienceEventSchema.safeParse({ ...gift('boost'), amount: 1_000_001 }).success).toBe(
+      false,
+    );
     expect(audienceEventSchema.safeParse({ ...gift('boost'), amount: 0 }).success).toBe(false);
     expect(audienceEventSchema.safeParse({ ...gift('boost'), amount: 1.1 }).success).toBe(false);
   });
@@ -265,15 +271,19 @@ describe('audited durable event handling', () => {
       s.close();
     }
   });
-  test('terminal round rejection is retained: blind retries will not apply the gift in a later round', () => {
+  test('intermission gifts are queued durably and apply once in the next round', () => {
     const s = new Store(':memory:'),
       b = arena();
     try {
       b.state.phase = 'result';
-      expect(s.ingest(b, gift('boost')).accepted).toBe(false);
-      b.restart();
-      expect(s.ingest(b, gift('boost'))).toMatchObject({ accepted: false, duplicate: true });
-      expect(b.state.boosts.red).toBe(0);
+      expect(s.ingest(b, gift('boost'))).toMatchObject({ accepted: true, status: 'queued' });
+      s.restart(b);
+      expect(s.ingest(b, gift('boost'))).toMatchObject({
+        accepted: true,
+        status: 'applied',
+        duplicate: true,
+      });
+      expect(b.state.boosts.red).toBe(8);
     } finally {
       s.close();
     }

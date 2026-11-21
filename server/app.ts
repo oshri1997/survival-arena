@@ -14,6 +14,7 @@ import {
   type Viewer,
 } from '../src/teams/contracts';
 import { Store } from './store';
+import { liveEventSchema, mappingSchema, type LiveBinding } from './live/contracts';
 
 interface ServerOptions {
   adminKey: string;
@@ -22,6 +23,7 @@ interface ServerOptions {
   distPath: string;
   demoJoin?: boolean;
   seedDemo?: boolean;
+  liveBinding?: LiveBinding;
 }
 const safeEqual = (left: string, right: string) => {
   const a = Buffer.from(left),
@@ -85,6 +87,8 @@ export function createBattleServer(options: ServerOptions) {
     last = Date.now(),
     lastSave = last;
   const demoJoin = options.demoJoin ?? true;
+  let liveBinding = options.liveBinding;
+  let liveStatus: Record<string, unknown> = { state: 'disabled' };
   const accept = (event: AudienceEvent) => store.ingest(battle, event);
   const addCrowd = (count: number) => {
     for (let i = 0; i < count; i++) {
@@ -163,6 +167,14 @@ export function createBattleServer(options: ServerOptions) {
           respond(res, 200, { authenticated: isAdmin(req) });
           return;
         }
+        if (req.method === 'GET' && path === '/api/teams/admin/diagnostics') {
+          if (!isAdmin(req)) {
+            respond(res, 401, { error: 'Admin login required' });
+            return;
+          }
+          respond(res, 200, { ...store.diagnostics(), live: liveStatus });
+          return;
+        }
         if (req.method !== 'POST') {
           respond(res, 405, { error: 'Method not allowed' });
           return;
@@ -207,7 +219,7 @@ export function createBattleServer(options: ServerOptions) {
           respond(res, 200, { ok: true });
           return;
         }
-        if (path === '/api/teams/events') {
+        if (path === '/api/teams/events' || path === '/api/teams/live/events') {
           const authorization = req.headers.authorization ?? '';
           if (!safeEqual(authorization, `Bearer ${options.eventKey}`)) {
             respond(res, 401, { error: 'Event key required' });
@@ -217,7 +229,23 @@ export function createBattleServer(options: ServerOptions) {
             respond(res, 429, { error: 'Event rate exceeded' });
             return;
           }
-          const parsed = audienceEventSchema.safeParse(await body(req));
+          const input = await body(req);
+          if (path === '/api/teams/live/events') {
+            if (!liveBinding) {
+              respond(res, 503, { error: 'LIVE room binding required' });
+              return;
+            }
+            const parsed = liveEventSchema.safeParse(input);
+            if (!parsed.success) {
+              respond(res, 400, { error: 'Invalid LIVE event' });
+              return;
+            }
+            const result = store.ingestLive(battle, parsed.data, liveBinding);
+            respond(res, result.accepted ? 200 : 409, result);
+            broadcast();
+            return;
+          }
+          const parsed = audienceEventSchema.safeParse(input);
           if (!parsed.success) {
             respond(res, 400, { error: 'Invalid event', details: parsed.error.flatten() });
             return;
@@ -225,6 +253,20 @@ export function createBattleServer(options: ServerOptions) {
           const result = accept(parsed.data);
           respond(res, result.accepted ? 200 : 409, result);
           broadcast();
+          return;
+        }
+        if (path === '/api/teams/admin/gift-mapping') {
+          if (!isAdmin(req)) {
+            respond(res, 401, { error: 'Admin login required' });
+            return;
+          }
+          const parsed = mappingSchema.safeParse(await body(req));
+          if (!parsed.success) {
+            respond(res, 400, { error: 'Invalid gift mapping' });
+            return;
+          }
+          store.mapGift(parsed.data.giftId, parsed.data.action);
+          respond(res, 200, { ok: true });
           return;
         }
         if (path === '/api/teams/admin/actions') {
@@ -243,7 +285,7 @@ export function createBattleServer(options: ServerOptions) {
           }
           const action = parsed.data;
           if (action.type === 'pause') battle.state.paused = action.paused;
-          if (action.type === 'restart') battle.restart();
+          if (action.type === 'restart') store.restart(battle);
           if (action.type === 'autoplay') battle.state.autoplay = action.enabled;
           if (action.type === 'crowd') addCrowd(action.count);
           if (action.type === 'event') {
@@ -327,7 +369,15 @@ export function createBattleServer(options: ServerOptions) {
         respond(res, 404, { error: 'File not found' });
       }
     } catch (error) {
-      respond(res, 400, { error: error instanceof Error ? error.message : 'Invalid request' });
+      const malformed = error instanceof SyntaxError || error instanceof URIError;
+      const tooLarge = error instanceof Error && error.message === 'Request too large';
+      respond(res, malformed ? 400 : tooLarge ? 413 : 503, {
+        error: malformed
+          ? 'Invalid request'
+          : tooLarge
+            ? 'Request too large'
+            : 'Processing unavailable; retry the same event ID',
+      });
     }
   });
   server.on('upgrade', (req, socket, head) => {
@@ -348,7 +398,7 @@ export function createBattleServer(options: ServerOptions) {
       elapsed = Math.min((now - last) / 1000, 0.5);
     last = now;
     for (let remaining = elapsed; remaining > 0; remaining -= 0.05)
-      battle.update(Math.min(0.05, remaining));
+      store.tick(battle, Math.min(0.05, remaining));
     if (battle.state.autoplay && !battle.state.paused && battle.state.phase === 'battle') {
       nextSimulation -= elapsed;
       if (nextSimulation <= 0) {
@@ -382,6 +432,20 @@ export function createBattleServer(options: ServerOptions) {
     server,
     battle,
     store,
+    live: {
+      bind: (binding: LiveBinding) => {
+        liveBinding = binding;
+      },
+      status: (status: Record<string, unknown>) => {
+        liveStatus = status;
+      },
+      accept: (event: import('./live/contracts').LiveEvent) => {
+        if (!liveBinding) throw new Error('LIVE room binding required');
+        const result = store.ingestLive(battle, event, liveBinding);
+        broadcast();
+        return result;
+      },
+    },
     close: async () => {
       if (closed) return;
       closed = true;

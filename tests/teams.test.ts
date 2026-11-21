@@ -72,7 +72,11 @@ describe('team battle rules', () => {
     expect(red.hp).toBe(65);
     for (let i = 0; i < 40; i++) battle.apply(gift('reinforce'));
     expect(battle.state.fighters).toHaveLength(MAX_FIGHTERS);
-    expect(battle.apply(gift('reinforce')).accepted).toBe(false);
+    expect(battle.apply(gift('reinforce'))).toMatchObject({
+      accepted: true,
+      status: 'cosmetic',
+      details: { spawned: 0 },
+    });
   });
   test('pause freezes simulation, rounds announce a winner then reset automatically and retain viewers', () => {
     const battle = joined();
@@ -96,7 +100,9 @@ describe('team battle rules', () => {
   });
   test('rejects unsafe avatars, non-integer gift counts and oversized incoming events', () => {
     expect(audienceEventSchema.safeParse({ ...gift('boost'), amount: 1.5 }).success).toBe(false);
-    expect(audienceEventSchema.safeParse({ ...gift('boost'), amount: 21 }).success).toBe(false);
+    expect(audienceEventSchema.safeParse({ ...gift('boost'), amount: 1_000_001 }).success).toBe(
+      false,
+    );
     expect(
       audienceEventSchema.safeParse({
         ...gift('boost'),

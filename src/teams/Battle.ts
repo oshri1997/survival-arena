@@ -6,6 +6,8 @@ import { FIELD, territoryRange } from './territory';
 export interface EventResult {
   accepted: boolean;
   reason?: string;
+  status?: 'queued' | 'applied' | 'cosmetic';
+  details?: { requested: number; spawned?: number; secondsAdded?: number; targets?: number };
 }
 const opposite = (team: Team): Team => (team === 'red' ? 'blue' : 'red');
 const clamp = (value: number, minimum: number, maximum: number) =>
@@ -77,7 +79,15 @@ export class Battle {
       temporary,
     };
   }
-  apply(event: AudienceEvent): EventResult {
+  acknowledge(viewer: Viewer, text: string, team?: Team) {
+    this.announce(viewer.name, text, team);
+    if (team) this.effect({ type: 'boost', team, x: team === 'red' ? 90 : 390, y: 400 });
+  }
+  replaceRoster(viewers: { viewer: Viewer; team: Team }[]) {
+    this.state.fighters = viewers.map(({ viewer, team }) => this.create(viewer, team));
+    this.patrol.reset();
+  }
+  apply(event: AudienceEvent, supporterTeam?: Team): EventResult {
     if (this.state.phase !== 'battle')
       return { accepted: false, reason: 'The next round starts shortly' };
     if (event.type === 'viewerJoined') {
@@ -120,7 +130,14 @@ export class Battle {
       return { accepted: true };
     }
     if (event.type === 'chat') return { accepted: false, reason: 'Type red or blue to join' };
-    const eventTeam = event.type === 'gift' ? (event.team ?? owner?.team) : owner?.team;
+    const eventTeam =
+      event.type === 'gift'
+        ? (event.team ?? owner?.team ?? supporterTeam)
+        : (owner?.team ?? supporterTeam);
+    if (event.type === 'gift' && event.gift === 'thanks') {
+      this.acknowledge(event.viewer, `thank you ×${event.amount}`, eventTeam);
+      return { accepted: true, status: 'cosmetic', details: { requested: event.amount } };
+    }
     if (!eventTeam) return { accepted: false, reason: 'Join red or blue first' };
     if (event.type === 'like') {
       this.state.likes[eventTeam] += event.count;
@@ -141,9 +158,13 @@ export class Battle {
       this.announce(event.viewer.name, 'healed the team', eventTeam);
     }
     if (event.type === 'gift') {
+      const details: NonNullable<EventResult['details']> = { requested: event.amount };
+      let reason: string | undefined;
       if (event.gift === 'reinforce') {
         const count = Math.min(3 * event.amount, MAX_FIGHTERS - this.state.fighters.length);
-        if (!count) return { accepted: false, reason: 'The arena is full' };
+        details.spawned = count;
+        if (count < 3 * event.amount)
+          reason = 'Ally capacity reached; overflow acknowledged cosmetically';
         for (let i = 0; i < count; i++) {
           const ally = this.create(event.viewer, eventTeam, true);
           this.state.fighters.push(ally);
@@ -151,17 +172,25 @@ export class Battle {
         }
       }
       if (event.gift === 'shield') {
+        const before = this.state.shields[eventTeam];
         this.state.shields[eventTeam] = Math.min(
           18,
           this.state.shields[eventTeam] + 6 * event.amount,
         );
+        details.secondsAdded = this.state.shields[eventTeam] - before;
+        if (details.secondsAdded < 6 * event.amount)
+          reason = 'Shield duration capped at 18 seconds; overflow acknowledged';
         this.effect({ type: 'shield', team: eventTeam, x: 240, y: 400 });
       }
       if (event.gift === 'boost') {
+        const before = this.state.boosts[eventTeam];
         this.state.boosts[eventTeam] = Math.min(
           24,
           this.state.boosts[eventTeam] + 8 * event.amount,
         );
+        details.secondsAdded = this.state.boosts[eventTeam] - before;
+        if (details.secondsAdded < 8 * event.amount)
+          reason = 'Power duration capped at 24 seconds; overflow acknowledged';
         this.effect({ type: 'boost', team: eventTeam, x: 240, y: 400 });
       }
       if (event.gift === 'meteor') {
@@ -171,11 +200,15 @@ export class Battle {
           .filter((f) => f.team !== eventTeam && f.hp > 0)
           .sort((a, b) => Math.abs(a.x - center) - Math.abs(b.x - center))
           .slice(0, 10);
+        details.targets = enemies.length;
+        if (!enemies.length) reason = 'No living opponents; gift acknowledged cosmetically';
         for (const enemy of enemies)
           this.damage(enemy, 55 * event.amount, owner?.team === eventTeam ? owner : undefined);
         this.patrol.constrain(this.state.fighters, this.state.territory, this.state.round);
       }
       this.announce(event.viewer.name, `sent ${event.gift}`, eventTeam);
+      const cosmetic = details.spawned === 0 || details.secondsAdded === 0 || details.targets === 0;
+      return { accepted: true, status: cosmetic ? 'cosmetic' : 'applied', details, reason };
     }
     return { accepted: true };
   }

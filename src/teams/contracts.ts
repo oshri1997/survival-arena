@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 export const teamSchema = z.enum(['red', 'blue']);
 export type Team = z.infer<typeof teamSchema>;
-export const giftSchema = z.enum(['reinforce', 'shield', 'meteor', 'boost']);
+export const giftSchema = z.enum(['reinforce', 'shield', 'meteor', 'boost', 'thanks']);
 export type TeamGift = z.infer<typeof giftSchema>;
 const httpsImage = z
   .string()
@@ -25,11 +25,11 @@ const envelope = z.object({ id: z.string().min(1).max(160), viewer: viewerSchema
 export const audienceEventSchema = z.discriminatedUnion('type', [
   envelope.extend({ type: z.literal('viewerJoined') }),
   envelope.extend({ type: z.literal('chat'), message: z.string().trim().min(1).max(200) }),
-  envelope.extend({ type: z.literal('like'), count: z.number().int().min(1).max(100) }),
+  envelope.extend({ type: z.literal('like'), count: z.number().int().min(1).max(1_000_000) }),
   envelope.extend({
     type: z.literal('gift'),
     gift: giftSchema,
-    amount: z.number().int().min(1).max(20).default(1),
+    amount: z.number().int().min(1).max(1_000_000).default(1),
     team: teamSchema.optional(),
   }),
   envelope.extend({ type: z.literal('follow') }),
@@ -102,8 +102,11 @@ export interface BattleSnapshot extends BattleState {
 }
 export const WORLD = { width: 480, height: 800 };
 export const MAX_FIGHTERS = 100;
+// Leave room for gift allies. Registered viewers rotate fairly between rounds.
+export const MAX_ACTIVE_VIEWERS = 80;
 export const ROUND_SECONDS = 120;
 export const GIFTS: Record<TeamGift, { name: string; description: string }> = {
+  thanks: { name: 'Thank you', description: 'Cosmetic acknowledgement, no team required' },
   reinforce: { name: 'Reinforcements', description: 'Deploy 3 allies' },
   shield: { name: 'Shield', description: 'Protect the team for 6 seconds' },
   meteor: { name: 'Meteor', description: 'Strike enemies near the front' },

@@ -1,14 +1,14 @@
 # Survival Arena LIVE
 
-**New: Red vs Blue Team Arena** — the server-synchronized viewer battle inspired by the supplied TikTok reference. Run `npm ci && npm run teams`, open `/teams.html`, and use `/teams-admin.html` for protected controls. Includes persistent rounds, original profile avatars, territory combat, four gifts and an authenticated event ingestion endpoint. No real TikTok connection is active. See [setup, API contract and Node deployment](docs/team-battle.md). For a static playable preview use `/teams-demo.html` or `npm run build:demo` and publish `dist-demo/`; this is explicitly local and has no shared server. The existing crystal defense below remains available at `/index.html`.
+**New: Red vs Blue Team Arena** — the server-synchronized viewer battle inspired by the supplied TikTok reference. Run `npm ci && npm run teams`, open `/teams.html`, and use `/teams-admin.html` for protected controls. Includes persistent rounds, original profile avatars, territory combat, four combat gift effects, cosmetic acknowledgements and authenticated event ingestion. No real TikTok connection is active. See [setup, API contract and Node deployment](docs/team-battle.md). For a static playable preview use `/teams-demo.html` or `npm run build:demo` and publish `dist-demo/`; this is explicitly local and has no shared server. The existing crystal defense below remains available at `/index.html`.
 
 [Play the updated movement demo](https://oshri-survival-arena-patrol.mikaoshriai.chatgpt.site) (owner-private local simulation). Avatars patrol their own territory with smooth steering and continue shooting at nearby opponents.
 
-Before using real viewer gifts, read the [LIVE readiness audit](docs/live-readiness-audit.md). Gift-ID catalog mapping, streak normalization and durable pending-gift handling still need integration work.
+Before using real viewer gifts, read the [LIVE readiness audit](docs/live-readiness-audit.md). Gift-ID mapping, cumulative streak normalization, durable pending gifts and fair roster rotation are implemented. An optional server-only Euler Stream JSON collector is included and disabled until configured; see [LIVE setup and delivery semantics](docs/live-integration.md). Railway deployment and a real-account/physical-phone rehearsal remain next.
 
 A game-first fantasy defense arena for TikTok LIVE-style broadcasts. The game opens directly into combat, fills the viewport, and shows only **wave, crystal health and four viewer interactions**. The guardian defends automatically; waves, upgrades and new rounds continue without menus.
 
-TikTok interactions are **simulated** in both modes. No TikTok account, credentials, payment integration or real live event connector is present. The crystal game below uses local events; Team Arena supports a shared server.
+TikTok interactions are **simulated by default**. No TikTok account or credentials are connected. Team Arena includes an optional server collector; the crystal game remains local. The crystal game below uses local events; Team Arena supports a shared server.
 
 ## Run and play
 

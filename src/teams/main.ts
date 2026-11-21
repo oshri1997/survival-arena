@@ -76,7 +76,10 @@ client.onState((state) => {
     `Next round in ${Math.ceil(state.remaining)}`;
   document
     .querySelectorAll<HTMLButtonElement>('[data-team]')
-    .forEach((b) => (b.disabled = !state.demoJoin || state.phase === 'result'));
+    .forEach(
+      (b) =>
+        (b.disabled = !state.demoJoin || (client instanceof LocalDemo && state.phase === 'result')),
+    );
   const latest = state.activity[0];
   if (latest && latest.id > activity) {
     activity = latest.id;
@@ -94,7 +97,13 @@ document.querySelectorAll<HTMLButtonElement>('[data-team]').forEach((button) =>
   button.addEventListener('click', async () => {
     try {
       if (client instanceof LocalDemo) client.join(button.dataset.team as Team);
-      else await post('/api/teams/join', { team: button.dataset.team, name: 'You' });
+      else {
+        const result = await post('/api/teams/join', { team: button.dataset.team, name: 'You' });
+        if (result.status === 'queued') {
+          document.getElementById('join-hint')!.textContent = 'REGISTERED · YOUR TURN IS COMING';
+          return;
+        }
+      }
       document.getElementById('join-hint')!.textContent =
         `YOU’RE ON ${button.dataset.team!.toUpperCase()}`;
     } catch (error) {

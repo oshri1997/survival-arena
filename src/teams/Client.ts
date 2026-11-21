@@ -1,4 +1,5 @@
 import type { BattleSnapshot } from './contracts';
+import type { EventResult } from './Battle';
 
 export interface BattleFeed {
   state?: BattleSnapshot;
@@ -65,7 +66,7 @@ export async function post(path: string, body: unknown) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
-  const result = (await response.json()) as { error?: string; reason?: string; accepted?: boolean };
+  const result = (await response.json()) as Partial<EventResult> & { error?: string };
   if (!response.ok) throw new Error(result.error ?? result.reason ?? 'Action failed');
   return result;
 }

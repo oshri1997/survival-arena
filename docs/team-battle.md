@@ -1,6 +1,6 @@
 # Red vs Blue · Team Arena
 
-Before connecting a real LIVE, read the [readiness audit and remaining gift-handling blockers](live-readiness-audit.md). Four internal effects do not yet provide a complete TikTok gift catalog or streak/round-boundary processing.
+Before connecting a real LIVE, read the [readiness audit](live-readiness-audit.md) and [provider setup/delivery contract](live-integration.md). Gift-ID mapping, streak normalization and durable round-boundary delivery are implemented; real-account and physical-phone validation remain.
 
 A working, server-authoritative multiplayer broadcast game inspired by the red/blue territory format in the supplied reference. It is original code and artwork, not a copy of another game's assets. This mode is separate from the earlier fantasy crystal defense.
 
@@ -42,15 +42,15 @@ npm run build:demo
 
 - Chat `red` / `1` or `blue` / `2` selects a side. One persistent fighter per viewer ID; switching sides removes that viewer's old temporary allies.
 - Avatars patrol independent waypoints throughout their own territory, with smooth acceleration, varied speeds and crowd separation. They keep roaming while firing at nearby opponents rather than chasing everyone into the frontier. The renderer and server share the same curved boundary, including when territory shrinks. Avatars lose health, earn kills/stars and respawn after 3 seconds. Combat resolves attacks together so roster order does not grant a first strike.
-- Each kill moves territory 1.2 percentage points. Reach 90% or lead when the two-minute timer ends to win. Results display for 8 seconds, then the next round starts automatically. Ties are draws. Viewers retain their teams.
+- Each kill moves territory 1.2 percentage points. Reach 90% or lead when the two-minute timer ends to win. Results display for 8 seconds, then the next round starts automatically. Ties are draws. Registered viewers retain their teams; up to 80 main avatars rotate fairly per round, reserving space for allies.
 - **Reinforce**: three temporary allies per unit. **Shield**: 75% damage reduction for 6 seconds/unit, capped at 18 seconds. **Meteor**: 55 damage/unit to up to ten opponents near the front. **Boost**: double attack power for 8 seconds/unit, capped at 24 seconds.
 - Every 20 likes charges four seconds of power (16-second like cap, without shortening a longer gift boost). A follow heals living teammates by 25 HP.
-- Cap: 100 fighters including temporary allies. No prizes, gambling, paid random rewards or location tracking.
+- Cap: 100 fighters including temporary allies. Additional viewers register for fair round rotation and can still send team interactions. Gift capacity/duration overflow receives a cosmetic acknowledgement with the actual applied count in admin receipts. No prizes, gambling, paid random rewards or location tracking.
 - Sound starts after touching/clicking the game, as required by Safari. `M` toggles local sound. Original synthesized effects remain optional; all actions have visible feedback.
 
 ## The remaining TikTok connection
 
-**No real TikTok provider, OAuth login or credentials are connected.** The rest of the game runs independently of TikTok. A future server-side connector must authenticate with its chosen TikTok event source, normalize its payloads, map provider gift IDs and deliver the contract below. That provider-specific adapter is the remaining integration work; this is not a claim that TikTok exposes a universal public gift API.
+**No real TikTok account is connected.** The optional `server/live/euler.ts` collector connects from the server to Euler Stream’s JSON WebSocket service. It is disabled unless all three server environment values are set. It handles viewer arrival, team chat, like deltas, follow and gift events, with room/recipient filtering and durable streak accounting. This is a third-party service, not an official general-purpose TikTok LIVE API. Read [LIVE integration](live-integration.md) for configuration, mapping and delivery boundaries.
 
 ### Ingestion
 
@@ -71,16 +71,16 @@ npm run build:demo
 
 `avatar` is optional. HTTPS images must allow anonymous CORS access; otherwise an original illustrated avatar remains visible. URLs with embedded credentials are rejected. Viewer names render as text, never HTML.
 
-| Source event            | `type`         | Additional fields / behavior                                                                                               |
-| ----------------------- | -------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| ViewerJoined            | `viewerJoined` | Arrival acknowledgement; does not choose a team                                                                            |
-| ChatMessage             | `chat`         | `message`: 1–200 chars; team keywords select a side                                                                        |
-| LikeReceived            | `like`         | `count`: integer 1–100; viewer must have joined                                                                            |
-| FollowReceived          | `follow`       | Viewer must have joined                                                                                                    |
-| GiftReceived            | `gift`         | `gift`: `reinforce`, `shield`, `meteor`, `boost`; `amount`: integer 1–20, default 1; optional `team` overrides viewer team |
-| Internal team selection | `join`         | `team`: `red` or `blue`                                                                                                    |
+| Source event            | `type`         | Additional fields / behavior                                                                                                                |
+| ----------------------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| ViewerJoined            | `viewerJoined` | Arrival acknowledgement; does not choose a team                                                                                             |
+| ChatMessage             | `chat`         | `message`: 1–200 chars; team keywords select a side                                                                                         |
+| LikeReceived            | `like`         | `count`: integer 1–1,000,000; registered team members contribute even when waiting for an avatar                                            |
+| FollowReceived          | `follow`       | Registered team members heal their team; unassigned follows get a cosmetic acknowledgement                                                  |
+| GiftReceived            | `gift`         | `gift`: `reinforce`, `shield`, `meteor`, `boost`, `thanks`; `amount`: integer 1–1,000,000, default 1; optional `team` overrides viewer team |
+| Internal team selection | `join`         | `team`: `red` or `blue`                                                                                                                     |
 
-Event envelopes reject unrecognized fields; do not post raw provider objects or cumulative counters directly. Every event requires a stable unique `id` (1–160 chars), and a `viewer` with stable `id` (1–100 chars) and `name` (1–32 chars). Namespace event IDs by stream/session. The provider should send a completed gift streak once, or distinct incremental deltas, never cumulative repeat counts as separate gifts. Split quantities above 20 into uniquely identified batches; aggregate high-volume likes into batches up to 100. The endpoint allows 200 requests per 10 seconds per source IP. Respect 429 and retry the **same ID** with backoff.
+Event envelopes reject unrecognized fields; do not post raw provider objects or cumulative counters directly. Every event requires a stable unique `id` (1–160 chars), and a `viewer` with stable `id` (1–100 chars) and `name` (1–32 chars). Namespace event IDs by stream/session. The provider should send a completed gift streak once, or distinct incremental deltas, never cumulative repeat counts as separate gifts. The separate `/api/teams/live/events` contract accepts provider gift IDs and cumulative streak metadata; the included collector calls the same store directly. Both counters are bounded at 1,000,000; larger or invalid values produce a visible validation failure rather than truncation. The endpoint allows 200 requests per 10 seconds per source IP. Respect 429 and retry the **same ID** with backoff.
 
 Examples from a connector host (keys are environment variables, not browser values):
 
@@ -96,7 +96,11 @@ curl --fail-with-body "$ARENA_URL/api/teams/events" \
   --data '{"id":"stream1:gift:99","type":"gift","viewer":{"id":"42","name":"Luna"},"gift":"meteor","amount":1}'
 ```
 
-Success: `200 {"accepted":true,"duplicate":false}`. Repeating the same ID/payload returns the stored outcome with `duplicate:true` without repeating gameplay. Reusing a new-format receipt ID with a changed payload returns 409; legacy receipts migrate but have no historical payload fingerprint. Rejected gameplay commands return 409 with a reason (e.g. not on a team, round result, arena full); invalid data 400, missing/wrong key 401, rate limit 429. Terminal rejected events are also recorded; send a new event ID for a genuinely new action. Deduplication retains the **latest 20,000 event receipts** across restarts; do not replay older history. Durable event application and its receipt commit in one SQLite transaction.
+Success returns `accepted:true`, `duplicate:false` and, for gifts, `status: queued | applied | cosmetic`. `details` reports requested units and actual spawned allies, added seconds or affected targets. Repeating the same ID returns its **current stored outcome** without repeating gameplay. A changed economic payload with the same ID returns 409. Display-name/avatar enrichment does not count as a new gift. Legacy fingerprint receipts retain compatibility.
+
+Gifts received during pause/results or before team choice enter a durable inbox. A teamless gift binds to the viewer’s first subsequent team choice; an already-bound gift keeps its team through switches. Up to 25 eligible pending gifts drain per simulation step. No team choice means the gift stays queued and visible to the admin. Unknown gift IDs default to `thanks`, which needs no team. Capacity and duration limits explicitly acknowledge overflow; they do not promise unlimited gameplay power.
+
+Invalid data returns 400, absent key 401, rate limits 429, and temporary processing errors 503 (retry the exact same ID/payload). Receipt and game changes commit together. Receipts/streak watermarks are no longer automatically pruned at 20,000; back up the volume, monitor disk use and define an archive/replay policy before removing old data.
 
 ### Broadcast and production operation
 
@@ -104,7 +108,7 @@ Success: `200 {"accepted":true,"duplicate":false}`. Repeating the same ID/payloa
 2. Set separate, random `TEAM_ADMIN_KEY` and `TEAM_EVENT_KEY` server secrets.
 3. For a real connected broadcast set `TEAM_DEMO_JOIN=false`, `TEAM_SEED_DEMO=false`, and use a **fresh state volume**. Seed flags only affect a new database. If reusing a demo database, automatic events remain saved until disabled in admin.
 4. Use `/teams.html` in a 1080×1920 OBS/TikTok LIVE Studio browser source. Open `/teams-admin.html` in a separate ordinary browser, sign in, keep its key private.
-5. Connect the future provider only to the protected ingestion endpoint. Viewer WebSockets are read-only; sending a command closes that socket. Admin actions require an HttpOnly/SameSite session and reject cross-origin requests.
+5. Configure the optional collector or a compatible protected server-side event provider using [LIVE integration](live-integration.md). Viewer WebSockets are read-only; sending a command closes that socket. Admin actions require an HttpOnly/SameSite session and reject cross-origin requests.
 
 ```sh
 docker build -t survival-arena .
@@ -132,7 +136,8 @@ Put a TLS reverse proxy in front and forward `/api/teams/socket` upgrades. Node 
 - `src/teams/Battle.ts`: renderer-free combat/round rules; sole authority on the server.
 - `src/teams/Patrol.ts`, `territory.ts`: autonomous steering, collision avoidance and shared territory constraints. Old saved games without velocity fields remain readable; new patrol routes are chosen after a server restart.
 - `server/app.ts`: HTTP authentication, ingestion, mock automation, static hosting, 20 Hz simulation, 10 Hz snapshots and WebSocket backpressure.
-- `server/store.ts`: SQLite WAL state/receipts; one-second routine checkpoints, immediate writes for event/admin commands. Sudden power loss may lose up to one second of ordinary combat, but acknowledged event writes are transactional.
+- `server/store.ts`: SQLite WAL state, registered roster, pending gifts, catalog and receipt/streak ledgers; one-second routine checkpoints, immediate writes for event/admin commands. Sudden power loss may lose up to one second of ordinary combat, but acknowledged event writes are transactional.
+- `server/live/contracts.ts`, `euler.ts`: validated provider boundary and optional independent cloud collector; no frontend credentials.
 - `src/teams/Client.ts`: same-origin WebSocket client, automatic reconnect and fresh state after reconnect.
 - `src/teams/TeamScene.ts`, `avatars.ts`: Phaser renderer, cached hex field, smooth avatar motion, health/stars/projectiles/impact effects, original generated profile art and optional provider avatars.
 - `src/teams/main.ts`, `admin.ts`, `style.css`: separate minimal audience screen and authenticated control room.
