@@ -1,5 +1,10 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
 import { Battle } from '../../src/teams/Battle';
+
+async function chooseDemoTeam(page: Page, team: 'red' | 'blue') {
+  await page.locator('#demo-join summary').click();
+  await page.getByRole('button', { name: `Join ${team} in demo` }).click();
+}
 
 test('the live arena shows viewer interactions, then clears its roster and timer when the broadcast ends', async ({
   page,
@@ -53,6 +58,19 @@ test('the live arena shows viewer interactions, then clears its roster and timer
   await expect(page.locator('#clock')).toHaveText('4:00');
   const guide = page.locator('.gift-guide');
   await expect(guide.locator('li')).toHaveCount(10);
+  await expect(page.getByRole('button', { name: /join (red|blue)/i })).toHaveCount(0);
+  await expect(page.locator('#chat-help')).toContainText('Chat red or blue to join');
+  await expect(guide.locator('ul')).toHaveCSS('background-color', 'rgba(15, 24, 43, 0.38)');
+  expect(
+    await guide.evaluate((panel) => {
+      const bounds = panel.getBoundingClientRect();
+      return (
+        bounds.top >= innerHeight * 0.58 &&
+        Math.abs(bounds.left + bounds.width / 2 - innerWidth / 2) < 3 &&
+        bounds.bottom <= innerHeight
+      );
+    }),
+  ).toBe(true);
   await expect(guide.locator('[data-live-gift="5659"]')).toContainText('75% shield · 6s');
   await expect(guide.locator('li').last()).toBeInViewport({ ratio: 1 });
   expect(await guide.locator('ul').evaluate((list) => list.scrollHeight)).toBeLessThanOrEqual(
@@ -142,15 +160,18 @@ test('networked team battle fills mobile screen; separate authenticated admin se
       expect(await page.locator('#red-share').evaluate((el) => getComputedStyle(el).fontSize)).toBe(
         '90px',
       );
-      expect(await page.locator('.join-red').evaluate((el) => getComputedStyle(el).fontSize)).toBe(
-        '25px',
-      );
+      expect(
+        await page
+          .locator('.gift-guide li b')
+          .first()
+          .evaluate((el) => getComputedStyle(el).fontSize),
+      ).toBe('20px');
     }
   }
   await page.setViewportSize({ width: 430, height: 932 });
-  await page.getByRole('button', { name: 'JOIN RED' }).click();
+  await chooseDemoTeam(page, 'red');
   await expect(page.locator('#join-hint')).toHaveText('YOU’RE ON RED');
-  await page.getByRole('button', { name: 'JOIN BLUE' }).click();
+  await chooseDemoTeam(page, 'blue');
   await expect(page.locator('#join-hint')).toHaveText('YOU’RE ON BLUE');
   const otherContext = await browser.newContext({ viewport: { width: 430, height: 932 } });
   const other = await otherContext.newPage();
@@ -241,7 +262,8 @@ test('explicit static demo plays without contacting a backend and simulates gift
   await page.goto('/teams-demo.html');
   await expect(page.locator('#team-game canvas')).toBeVisible();
   await expect(page.locator('#mode')).toHaveText('LOCAL DEMO');
-  await page.getByRole('button', { name: 'JOIN BLUE' }).click();
+  await expect(page.getByRole('button', { name: /join (red|blue) in demo/i })).toHaveCount(0);
+  await chooseDemoTeam(page, 'blue');
   await expect(page.locator('#join-hint')).toHaveText('YOU’RE ON BLUE');
   await expect(page.locator('#blue-count')).toHaveText('13 players');
   await expect(page.locator('#team-notice')).toContainText(/sent (shield|meteor|boost|reinforce)/, {
@@ -316,7 +338,7 @@ test('a waiting viewer is promoted when a full arena rotates into the next round
   await viewer.setViewportSize({ width: 390, height: 844 });
   await viewer.goto(root + '/teams.html');
   await expect(viewer.locator('body')).toHaveAttribute('data-connected', 'true');
-  await viewer.getByRole('button', { name: 'JOIN RED' }).click();
+  await chooseDemoTeam(viewer, 'red');
   await expect(viewer.locator('#join-hint')).toHaveText('REGISTERED · YOUR TURN IS COMING');
   await action({ type: 'restart' });
   await expect(viewer.locator('#join-hint')).toHaveText('YOU’RE ON RED');

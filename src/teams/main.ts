@@ -15,7 +15,7 @@ import './style.css';
 import { Sound } from '../audio/Sound';
 
 document.getElementById('app')!.innerHTML =
-  `<main class="battle-screen"><div id="team-game" role="img" aria-label="Red and blue viewer avatars battle for territory"></div><header class="team-scoreboard"><div class="score red"><span>RED <i class="team-power" id="red-power" hidden>POWER ×2</i></span><b id="red-share">50<span>%</span></b><small id="red-count">0 players</small><small class="team-rally" id="red-rally" hidden></small></div><div class="round-info"><span id="mode">DEMO</span><b id="clock">${Math.floor(ROUND_SECONDS / 60)}:00</b><small id="round">ROUND 1</small></div><div class="score blue"><span>BLUE <i class="team-power" id="blue-power" hidden>POWER ×2</i></span><b id="blue-share">50<span>%</span></b><small id="blue-count">0 players</small><small class="team-rally" id="blue-rally" hidden></small></div><div class="territory-track"><i id="territory-red"></i></div></header><details class="gift-guide" open><summary>Gift effects</summary><ul id="gift-guide-items"></ul></details><div id="team-result" class="team-result" hidden><span>ROUND COMPLETE</span><strong id="winner"></strong><small id="next-round"></small></div><div id="team-notice" class="team-notice" role="status">Connecting to the arena…</div><footer class="join-controls"><span class="join-hint" id="join-hint">CHOOSE YOUR SIDE</span><span class="join-hint viewer-welcome" id="viewer-welcome" role="status" hidden></span><div><button data-team="red" class="join-red">JOIN RED <span>1</span></button><button data-team="blue" class="join-blue">JOIN BLUE <span>2</span></button></div><small>Chat <b>red</b> or <b>blue</b> to join · <b>!power</b> for your next upgrade</small></footer></main>`;
+  `<main class="battle-screen"><div id="team-game" role="img" aria-label="Red and blue viewer avatars battle for territory"></div><header class="team-scoreboard"><div class="score red"><span>RED <i class="team-power" id="red-power" hidden>POWER ×2</i></span><b id="red-share">50<span>%</span></b><small id="red-count">0 players</small><small class="team-rally" id="red-rally" hidden></small></div><div class="round-info"><span id="mode">DEMO</span><b id="clock">${Math.floor(ROUND_SECONDS / 60)}:00</b><small id="round">ROUND 1</small></div><div class="score blue"><span>BLUE <i class="team-power" id="blue-power" hidden>POWER ×2</i></span><b id="blue-share">50<span>%</span></b><small id="blue-count">0 players</small><small class="team-rally" id="blue-rally" hidden></small></div><div class="territory-track"><i id="territory-red"></i></div></header><div id="team-result" class="team-result" hidden><span>ROUND COMPLETE</span><strong id="winner"></strong><small id="next-round"></small></div><footer class="arena-footer"><div id="team-notice" class="team-notice" role="status">Connecting to the arena…</div><span class="viewer-welcome" id="viewer-welcome" role="status" hidden></span><details class="gift-guide" open><summary>Gift effects</summary><ul id="gift-guide-items"></ul></details><div class="join-controls" hidden><small id="chat-help" hidden>Chat <b>red</b> or <b>blue</b> to join · <b>!power</b> for your next upgrade</small><details id="demo-join" class="demo-join" hidden><summary id="join-hint">Play demo</summary><div><button data-team="red" aria-label="Join red in demo">Red</button><button data-team="blue" aria-label="Join blue in demo">Blue</button></div></details></div></footer></main>`;
 const giftGuide = document.getElementById('gift-guide-items')!;
 let displayedGiftOverrides = '';
 function renderGiftGuide(overrides: BattleSnapshot['giftOverrides'] = {}) {
@@ -78,6 +78,10 @@ const resize = new ResizeObserver(([entry]) => {
 resize.observe(document.getElementById('team-game')!);
 const viewerWelcome = document.getElementById('viewer-welcome')!;
 const joinHint = document.getElementById('join-hint')!;
+const joinControls = document.querySelector<HTMLElement>('.join-controls')!;
+const chatHelp = document.getElementById('chat-help')!;
+const demoJoin = document.querySelector<HTMLDetailsElement>('#demo-join')!;
+const demoTeamButtons = demoJoin.querySelectorAll<HTMLButtonElement>('[data-team]');
 let activity = 0,
   noticeUntil = 0,
   giftNoticeUntil = 0,
@@ -86,7 +90,6 @@ let ownViewerId: string | undefined;
 let waitingForTeam: Team | undefined;
 const clearWelcome = () => {
   viewerWelcome.hidden = true;
-  joinHint.hidden = false;
   welcomeUntil = 0;
 };
 client.onState((state) => {
@@ -132,7 +135,10 @@ client.onState((state) => {
       : state.autoplay || state.demoJoin
         ? 'DEMO LIVE'
         : 'TEAM ARENA';
-  document.querySelector<HTMLElement>('.join-controls')!.hidden = waiting;
+  joinControls.hidden = waiting;
+  chatHelp.hidden = waiting || state.demoJoin;
+  demoJoin.hidden = waiting || !state.demoJoin;
+  if (demoJoin.hidden) demoJoin.open = false;
   if (waiting) {
     noticeUntil = giftNoticeUntil = 0;
     clearWelcome();
@@ -144,12 +150,9 @@ client.onState((state) => {
   document.getElementById('team-result')!.className = `team-result ${state.winner ?? ''}`;
   document.getElementById('next-round')!.textContent =
     `Next round in ${Math.ceil(state.remaining)}`;
-  document
-    .querySelectorAll<HTMLButtonElement>('[data-team]')
-    .forEach(
-      (b) =>
-        (b.disabled = !state.demoJoin || (client instanceof LocalDemo && state.phase === 'result')),
-    );
+  demoTeamButtons.forEach((button) => {
+    button.disabled = demoJoin.hidden || (client instanceof LocalDemo && state.phase === 'result');
+  });
   const recent = state.activity.filter((item) => item.id > activity);
   if (!recent.length) return;
   activity = recent[0].id;
@@ -160,7 +163,6 @@ client.onState((state) => {
   if (arrival && !waiting) {
     viewerWelcome.textContent = `${arrival.name} · ${arrival.text}`;
     viewerWelcome.hidden = false;
-    joinHint.hidden = true;
     welcomeUntil = now + 4000;
   }
   const gift = recent.find((item) => item.kind === 'gift');
@@ -187,7 +189,7 @@ client.onState((state) => {
   noticeUntil = now + (gift ? 3000 : 2200);
   if (gift) giftNoticeUntil = noticeUntil;
 });
-document.querySelectorAll<HTMLButtonElement>('[data-team]').forEach((button) =>
+demoTeamButtons.forEach((button) =>
   button.addEventListener('click', async () => {
     try {
       if (client instanceof LocalDemo) client.join(button.dataset.team as Team);
@@ -196,10 +198,12 @@ document.querySelectorAll<HTMLButtonElement>('[data-team]').forEach((button) =>
         ownViewerId = result.viewerId;
         waitingForTeam = result.status === 'queued' ? (button.dataset.team as Team) : undefined;
         if (result.status === 'queued') {
+          demoJoin.open = false;
           joinHint.textContent = 'REGISTERED · YOUR TURN IS COMING';
           return;
         }
       }
+      demoJoin.open = false;
       joinHint.textContent = `YOU’RE ON ${button.dataset.team!.toUpperCase()}`;
     } catch (error) {
       document.getElementById('team-notice')!.hidden = false;

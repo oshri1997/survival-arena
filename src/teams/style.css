@@ -165,41 +165,59 @@ body:not(.team-admin) {
   background: #ff6c87;
   transition: width 0.25s;
 }
-.gift-guide {
+.arena-footer {
   position: absolute;
-  z-index: 4;
-  left: max(12px, env(safe-area-inset-left));
-  top: max(118px, 19%);
-  width: clamp(123px, 19vw, 225px);
-  color: #fff0c1;
-  font-size: clamp(10px, 1.3vw, 16px);
+  inset-inline: max(12px, env(safe-area-inset-left)) max(12px, env(safe-area-inset-right));
+  bottom: max(12px, calc(env(safe-area-inset-bottom) + 6px));
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  pointer-events: none;
 }
-.gift-guide summary {
+.gift-guide {
+  width: min(100%, 660px);
+  color: #fff3ce;
+  font-size: clamp(10px, 1.45vw, 14px);
+  line-height: 1.2;
+  text-shadow: 0 1px 3px #071022;
+}
+.gift-guide summary,
+.demo-join summary {
   width: max-content;
-  padding: 5px 8px;
-  background: #151b31e8;
-  border: 1px solid #ffdb876e;
+  margin-inline: auto;
+  padding: 5px 9px;
+  border: 1px solid #e4dcaf38;
   border-radius: 12px;
+  background: rgb(15 24 43 / 38%);
   cursor: pointer;
+  pointer-events: auto;
+  touch-action: manipulation;
 }
 .gift-guide ul {
   display: grid;
-  gap: 3px;
-  max-height: 58dvh;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 3px 10px;
+  max-height: 35dvh;
   overflow: auto;
   overscroll-behavior: contain;
-  margin: 4px 0 0;
-  padding: 5px;
-  background: #131a30df;
-  border: 1px solid #ffdb876e;
+  margin: 3px 0 0;
+  padding: 5px 8px;
+  background: rgb(15 24 43 / 38%);
+  border: 1px solid #e4dcaf38;
   border-radius: 12px;
+  pointer-events: auto;
 }
 .gift-guide li {
   display: grid;
-  grid-template-columns: clamp(20px, 3.1vw, 34px) minmax(0, 1fr);
+  grid-template-columns: clamp(20px, 3.2vw, 28px) minmax(0, 1fr);
   align-items: center;
   min-height: 24px;
-  gap: 4px;
+  gap: 5px;
+}
+.gift-guide li b {
+  display: block;
 }
 .gift-card-icon {
   display: grid;
@@ -220,113 +238,69 @@ body:not(.team-admin) {
 .gift-guide small,
 .team-notice.gift small {
   display: block;
-  color: #e9d8b5;
+  color: #f2e2c3;
   font-size: 0.9em;
 }
-@media (orientation: landscape) and (max-height: 610px) {
-  .gift-guide {
-    top: 101px;
-    width: clamp(230px, 31vw, 310px);
-  }
+@media (min-width: 700px), (orientation: landscape) and (min-width: 550px) {
   .gift-guide ul {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(5, minmax(0, 1fr));
   }
 }
-.join-controls {
-  position: absolute;
-  bottom: max(22px, env(safe-area-inset-bottom));
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 3;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 9px;
-  width: min(380px, calc(100% - 40px));
-}
-.join-hint {
-  font-size: 8px;
-  font-weight: 800;
-  letter-spacing: 2px;
-  color: #d6dff1;
-  text-shadow: 0 2px 4px #0b1126;
-}
-.join-hint.viewer-welcome {
+.viewer-welcome {
   max-width: 100%;
   overflow-wrap: anywhere;
   padding: 5px 10px;
   border-radius: 8px;
-  background: #101a30f0;
-  color: #ffffff;
+  background: #101a30c7;
+  color: #fff;
   letter-spacing: 0.4px;
   text-align: center;
   font-size: clamp(11px, 1.8vw, 20px);
-}
-.join-controls > div {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
-  width: 100%;
-}
-.join-controls button {
-  color: #fff;
-  font-size: 11px;
-  letter-spacing: 0.7px;
   font-weight: 800;
-  border: 1px solid #ffffff75;
-  padding: 14px 16px;
-  border-radius: 11px;
-  box-shadow:
-    inset 0 2px 0 #ffffff2b,
-    0 4px 0 #09162a88;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
 }
-.join-controls button:active {
-  transform: translateY(3px);
-  box-shadow: inset 0 2px 0 #ffffff2b;
-}
-.join-red {
-  background: linear-gradient(120deg, #cf345c, #f65d72);
-}
-.join-blue {
-  background: linear-gradient(120deg, #217ec9, #4dbaee);
-}
-.join-controls button > span {
-  width: 21px;
-  height: 21px;
-  border-radius: 6px;
-  background: #151e3a38;
-  display: grid;
-  place-items: center;
-  font-size: 10px;
+.join-controls {
+  max-width: 100%;
+  text-align: center;
+  font-size: clamp(10px, 1.4vw, 14px);
+  color: #e0e8f7;
+  text-shadow: 0 2px 3px #071022;
 }
 .join-controls > small {
-  font-size: 8px;
-  color: #c6cfe3;
-  text-shadow: 0 2px 3px #071022;
+  font-size: inherit;
 }
 .join-controls > small b:first-child {
   color: #ffa6b6;
 }
-.join-controls > small b:last-child {
+.join-controls > small b:nth-child(2) {
+  color: #9cdcff;
+}
+.demo-join > div {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  padding-top: 3px;
+}
+.demo-join button {
+  min-width: 58px;
+  min-height: 34px;
+  padding: 3px 8px;
+  background: #101a30d9;
+  border: 1px solid currentColor;
+  border-radius: 8px;
+  color: #ffa6b6;
+  pointer-events: auto;
+}
+.demo-join button[data-team='blue'] {
   color: #9cdcff;
 }
 .team-notice {
-  position: absolute;
-  bottom: 142px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: max-content;
-  max-width: calc(100% - 36px);
+  max-width: 100%;
   padding: 9px 16px;
   background: #111d34ed;
   border: 1px solid #b1c6f12b;
   border-radius: 30px;
   font-size: 10px;
   color: #cfdef3;
-  z-index: 3;
   text-align: center;
   box-shadow: 0 5px 15px #10162e55;
 }
@@ -344,7 +318,7 @@ body:not(.team-admin) {
   display: flex;
   align-items: center;
   gap: 7px;
-  background: linear-gradient(115deg, #352033f5, #48321df5);
+  background: linear-gradient(115deg, #352033d9, #48321dd9);
   border-color: #ffdb87bf;
   color: #ffe9ab;
   box-shadow: 0 0 24px #ffc45c55;
@@ -644,19 +618,8 @@ body:not(.team-admin) {
   .round-info > b {
     font-size: 26px;
   }
-  .join-controls {
-    bottom: 28px;
-  }
   .team-notice {
-    bottom: 150px;
     font-size: 12px;
-  }
-  .join-controls button {
-    font-size: 12px;
-    padding: 15px 18px;
-  }
-  .join-hint {
-    font-size: 9px;
   }
 }
 @media (max-width: 600px) {
@@ -710,19 +673,6 @@ body:not(.team-admin) {
   .round-info > b {
     font-size: 18px;
   }
-  .join-controls {
-    bottom: 12px;
-    gap: 5px;
-  }
-  .join-controls button {
-    padding: 9px 15px;
-  }
-  .join-controls > small {
-    display: none;
-  }
-  .team-notice {
-    bottom: 90px;
-  }
 }
 @media (prefers-reduced-motion: reduce) {
   * {
@@ -767,32 +717,29 @@ body:not(.team-admin) {
   .territory-track {
     height: 11px;
   }
+  .arena-footer {
+    inset-inline: 50px;
+    bottom: max(30px, calc(env(safe-area-inset-bottom) + 8px));
+    gap: 10px;
+  }
+  .gift-guide {
+    width: min(100%, 980px);
+    font-size: 20px;
+  }
+  .gift-guide ul {
+    gap: 8px 18px;
+    padding: 10px 14px;
+  }
+  .gift-guide li {
+    grid-template-columns: 36px minmax(0, 1fr);
+    gap: 8px;
+  }
   .join-controls {
-    width: calc(100% - 110px);
-    bottom: 50px;
-    gap: 20px;
-  }
-  .join-controls > div {
-    gap: 27px;
-  }
-  .join-controls button {
-    font-size: 25px;
-    padding: 30px 36px;
-    border-radius: 24px;
-  }
-  .join-controls button > span {
-    width: 47px;
-    height: 47px;
-    font-size: 22px;
-  }
-  .join-hint,
-  .join-controls > small {
     font-size: 18px;
   }
   .team-notice {
-    bottom: 315px;
     font-size: 22px;
-    padding: 20px 36px;
+    padding: 12px 26px;
   }
   .team-result {
     padding: 56px 78px;
