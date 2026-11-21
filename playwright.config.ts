@@ -4,7 +4,8 @@ export default defineConfig({
   timeout: 60000,
   expect: { timeout: 15000 },
   fullyParallel: false,
-  workers: 2,
+  // Canvas/WebGL smoke tests share the runner's GPU/CPU; parallel load is tested separately.
+  workers: 1,
   reporter: [['list'], ['html', { open: 'never' }]],
   use: {
     baseURL: 'http://127.0.0.1:4173',
@@ -21,5 +22,16 @@ export default defineConfig({
   webServer: [
     { command: 'npm run preview -- --port 4173', port: 4173, reuseExistingServer: false },
     { command: 'npm run dev -- --port 5175', port: 5175, reuseExistingServer: false },
+    ...[8787, 8788].map((port) => ({
+      command: 'npm run teams:server',
+      port,
+      reuseExistingServer: false,
+      env: {
+        PORT: String(port),
+        TEAM_ADMIN_KEY: 'browser-test-admin',
+        TEAM_EVENT_KEY: 'browser-test-events',
+        TEAM_STATE_PATH: ':memory:',
+      },
+    })),
   ],
 });
