@@ -206,6 +206,7 @@ interface Diagnostics {
     lastEventAt?: number;
     invalid?: number;
     ignored?: number;
+    giftsEnabled?: boolean;
     lastCloseCode?: number;
   };
   pending: number;
@@ -228,7 +229,7 @@ async function diagnostics() {
     const data = (await response.json()) as Diagnostics;
     if (!signedIn) return;
     el('live-status').textContent =
-      `${data.live.state.toUpperCase()}${data.live.reason ? ` · ${data.live.reason}` : ''}${data.live.lastEventAt ? ` · last event ${new Date(data.live.lastEventAt).toLocaleTimeString()}` : ''} · invalid ${data.live.invalid ?? 0} · ignored ${data.live.ignored ?? 0}${data.live.lastCloseCode ? ` · close ${data.live.lastCloseCode}` : ''}`;
+      `${data.live.state.toUpperCase()}${data.live.giftsEnabled === false ? ' · LIVE gifts need the creator ID' : ''}${data.live.reason ? ` · ${data.live.reason}` : ''}${data.live.lastEventAt ? ` · last event ${new Date(data.live.lastEventAt).toLocaleTimeString()}` : ''} · invalid ${data.live.invalid ?? 0} · ignored ${data.live.ignored ?? 0}${data.live.lastCloseCode ? ` · close ${data.live.lastCloseCode}` : ''}`;
     el('registered-count').textContent =
       `Registered: ${data.roster.map((row) => `${row.team} ${row.count}`).join(' · ') || '0'} · up to 80 avatars rotate fairly each round`;
     el('pending-count').textContent =

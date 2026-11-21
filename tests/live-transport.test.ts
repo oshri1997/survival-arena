@@ -9,7 +9,7 @@ const cleanup: (() => Promise<unknown> | void)[] = [];
 afterEach(async () => {
   for (const close of cleanup.splice(0).reverse()) await close();
 });
-async function setup() {
+async function setup(options: { creatorId?: string } = { creatorId: 'host' }) {
   const app = createBattleServer({
     adminKey: 'admin',
     eventKey: 'events',
@@ -38,7 +38,7 @@ async function setup() {
   const connector = new EulerConnector({
     username: '@test-only',
     apiKey: 'server-only-test-key',
-    creatorId: 'host',
+    creatorId: options.creatorId,
     endpoint,
     retryMs: 20,
     accept: app.live.accept,
@@ -154,6 +154,60 @@ test('real socket → normalization → SQLite → authoritative HTTP/WS state; 
     await (await post('live/events', unknown, { Authorization: 'Bearer events' })).json(),
   ).toMatchObject({ accepted: true, status: 'cosmetic' });
   expect(app.store.diagnostics().pending).toBe(0);
+});
+
+test('LIVE chat and likes work without a creator ID while gifts wait for a verified recipient', async () => {
+  const { app, provider, connector, post, statuses } = await setup({});
+  app.store.mapGift('flower', 'reinforce');
+  const connection = once(provider, 'connection');
+  connector.start();
+  const [socket] = (await connection) as [WebSocket];
+  socket.send(
+    JSON.stringify({
+      messages: [
+        { type: 'room.status', data: { state: 'connected', roomId: 'room-1' } },
+        event('WebcastChatMessage', 'chat-without-creator', { content: 'red' }),
+        event('WebcastLikeMessage', 'like-without-creator', { count: 5, total: '5' }),
+        event('WebcastGiftMessage', 'gift-without-creator', {
+          giftId: 'flower',
+          repeatCount: 1,
+          repeatEnd: 1,
+          toUser: { id: 'unverified-recipient' },
+          gift: { name: 'Flower', type: 2 },
+        }),
+      ],
+    }),
+  );
+  await vi.waitFor(() =>
+    expect(statuses.at(-1)).toMatchObject({ state: 'connected', giftsEnabled: false, ignored: 1 }),
+  );
+  expect(app.battle.state.fighters).toHaveLength(1);
+  expect(app.battle.state.fighters[0].team).toBe('red');
+  expect(app.battle.state.likes.red).toBe(5);
+
+  const result = await post(
+    'live/events',
+    {
+      id: 'http-gift-without-creator',
+      type: 'gift',
+      roomId: 'room-1',
+      recipientId: 'unverified-recipient',
+      viewer: { id: 'viewer-1', name: 'Viewer' },
+      giftId: 'flower',
+      giftName: 'Flower',
+      count: 1,
+      streak: false,
+      streakEnd: true,
+    },
+    { Authorization: 'Bearer events' },
+  );
+  expect(result.status).toBe(409);
+  expect(await result.json()).toMatchObject({
+    accepted: false,
+    reason: expect.stringContaining('TIKTOK_CREATOR_ID'),
+  });
+  expect(app.store.diagnostics().gifts).toHaveLength(0);
+  expect(app.battle.state.fighters).toHaveLength(1);
 });
 
 test('offline closes retry independently of viewers; invalid auth stops retrying and reports a safe status', async () => {

@@ -1,20 +1,19 @@
 # LIVE collector and delivery contract
 
-No real TikTok account has been connected or tested. The default remains a mock game. Railway setup is the next operation, not part of this change.
+The Railway deployment starts in simulation mode. Use the settings below to connect a TikTok account and verify it with a short LIVE test.
 
 ## Server collector
 
 `server/live/euler.ts` uses the existing `ws` dependency to consume Euler Stream’s JSON WebSocket protocol, explicitly requesting schema v3, bundled events and decoded JSON. It adds no protobuf SDK or TikTok credentials. The implementation was checked against [Euler’s WebSocket API](https://www.eulerstream.com/docs/api/tiktok-web-socket-api) and the upstream [protocol/types](https://github.com/EulerStream/Euler-WebSocket-SDK/tree/main/src). Synthetic protocol fixtures are tests, not recorded production traffic.
 
-Optional **server-only** variables, set together:
+To connect the collector, set both **server-only** variables:
 
 ```dotenv
 TIKTOK_USERNAME=your_username
-TIKTOK_CREATOR_ID=your_numeric_tiktok_user_id
 EULER_API_KEY=your_provider_key
 ```
 
-Keep all three unset until we configure the real account. No password, login cookie, TikTok OAuth token or `VITE_` secret is needed. Euler access, account permissions and quotas are separate from Railway hosting. A server subscription does not grant TikTok permissions or provider access.
+This configuration can test real chat, likes and follows. Set `TIKTOK_CREATOR_ID` to the broadcaster's numeric user ID before testing real gifts. The collector ignores gifts until the recipient check can run. Leave the variables unset for a simulated game. Euler access, account permissions and quotas are separate from Railway hosting.
 
 Use a fresh persistent state volume, `TEAM_DEMO_JOIN=false`, `TEAM_SEED_DEMO=false` and automatic demo events OFF for real broadcasts. The collector runs independently of the broadcaster’s computer/phone. It is attached to a username’s LIVE room, so it can receive events while that account broadcasts from either device. **Showing the game video inside a phone LIVE still needs an approved screen-sharing/broadcast workflow available to that account.** Receiving chat/gifts on the server does not inject a browser source into the TikTok phone app.
 

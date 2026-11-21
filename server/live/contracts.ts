@@ -23,6 +23,6 @@ export const liveEventSchema = z.discriminatedUnion('type', [
 export type LiveEvent = z.infer<typeof liveEventSchema>;
 export interface LiveBinding {
   roomId: string;
-  creatorId: string;
+  creatorId?: string;
 }
 export const mappingSchema = z.object({ giftId: id, action: giftSchema }).strict();

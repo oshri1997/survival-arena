@@ -50,7 +50,7 @@ npm run build:demo
 
 ## The remaining TikTok connection
 
-**No real TikTok account is connected.** The optional `server/live/euler.ts` collector connects from the server to Euler Stream’s JSON WebSocket service. It is disabled unless all three server environment values are set. It handles viewer arrival, team chat, like deltas, follow and gift events, with room/recipient filtering and durable streak accounting. This is a third-party service, not an official general-purpose TikTok LIVE API. Read [LIVE integration](live-integration.md) for configuration, mapping and delivery boundaries.
+The `server/live/euler.ts` collector connects to Euler Stream’s JSON WebSocket service when `TIKTOK_USERNAME` and `EULER_API_KEY` are set. It handles viewer arrival, team chat, like deltas and follows. Add `TIKTOK_CREATOR_ID` to enable gift delivery with recipient filtering and durable streak accounting. Read [LIVE integration](live-integration.md) for configuration, mapping and delivery boundaries.
 
 ### Ingestion
 

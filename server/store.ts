@@ -329,6 +329,12 @@ export class Store {
   }
   ingestLive(battle: Battle, input: LiveEvent, binding: LiveBinding): Receipt {
     const event = liveEventSchema.parse(input);
+    if (event.type === 'gift' && !binding.creatorId)
+      return {
+        accepted: false,
+        duplicate: false,
+        reason: 'Set TIKTOK_CREATOR_ID to enable LIVE gift delivery',
+      };
     if (
       event.roomId !== binding.roomId ||
       (event.type === 'gift' && event.recipientId !== binding.creatorId)

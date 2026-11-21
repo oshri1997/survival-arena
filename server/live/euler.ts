@@ -97,12 +97,13 @@ export interface ConnectorStatus {
   lastCloseCode?: number;
   invalid: number;
   ignored: number;
+  giftsEnabled: boolean;
   reason?: string;
 }
 interface Options {
   username: string;
   apiKey: string;
-  creatorId: string;
+  creatorId?: string;
   accept: (event: LiveEvent) => unknown;
   bind: (binding: LiveBinding) => void;
   status: (status: ConnectorStatus) => void;
@@ -117,8 +118,16 @@ export class EulerConnector {
   private heartbeat?: ReturnType<typeof setInterval>;
   private stopped = false;
   private binding?: LiveBinding;
-  private status: ConnectorStatus = { state: 'connecting', attempt: 0, invalid: 0, ignored: 0 };
-  constructor(private options: Options) {}
+  private status: ConnectorStatus;
+  constructor(private options: Options) {
+    this.status = {
+      state: 'connecting',
+      attempt: 0,
+      invalid: 0,
+      ignored: 0,
+      giftsEnabled: Boolean(options.creatorId),
+    };
+  }
   start() {
     this.stopped = false;
     this.connect();
@@ -226,6 +235,10 @@ export class EulerConnector {
     }
     // On older gateways without room.status, the authenticated username-scoped stream supplies the room ID.
     if (!this.binding) this.bind(event.roomId);
+    if (event.type === 'gift' && !this.binding?.creatorId) {
+      this.report({ ignored: this.status.ignored + 1 });
+      return;
+    }
     this.options.accept(event);
     this.report({ state: 'connected', lastEventAt: Date.now(), reason: undefined });
   }
