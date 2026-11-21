@@ -255,7 +255,7 @@ test('admin tracks a gift before team selection, delivers after resume and safel
   await page.locator('#viewer-id').fill(`pending-${info.project.name}`);
   await page.locator('#viewer-name').fill('Waiting Explorer');
   await page.locator('#gift-use-team').uncheck();
-  await page.getByRole('button', { name: 'Shield Protect', exact: false }).click();
+  await page.locator('button[data-team-gift="shield"]').click();
   await expect(page.locator('#action-result')).toContainText('Waiting for the viewer');
   await expect(page.locator('#pending-count')).toContainText('1 queued');
   await page.reload();
@@ -278,7 +278,7 @@ test('admin tracks a gift before team selection, delivers after resume and safel
   await page.locator('#viewer-id').fill(`thanks-${info.project.name}`);
   await page.locator('#gift-use-team').uncheck();
   await page.locator('#gift-amount').fill('21');
-  await page.getByRole('button', { name: 'Thank you Cosmetic', exact: false }).click();
+  await page.locator('button[data-team-gift="thanks"]').click();
   await expect(page.locator('#action-result')).toContainText('COSMETIC');
   await expect(page.locator('#action-result')).toContainText('21');
   await expect(page.locator('#pending-count')).toContainText('0 queued');
