@@ -78,29 +78,33 @@ describe('audited game interaction cases', () => {
     expect(b.state.boosts.red).toBe(0);
   });
   test.each([
-    [19, 0, 19],
-    [20, 4, 0],
-    [21, 4, 1],
-    [40, 8, 0],
-    [100, 16, 0],
-  ])('%i likes respect the threshold, remainder and duration cap', (count, boost, remainder) => {
+    [49, 0],
+    [50, 2],
+    [149, 2],
+    [150, 4],
+    [349, 4],
+    [350, 6],
+    [1_000_000, 6],
+  ])('%i likes give +%i personal damage', (count, power) => {
     const b = arena();
     b.apply(like(count));
-    expect(b.state.likeBoosts?.red ?? 0).toBe(boost);
-    expect(b.state.likes.red).toBe(remainder);
-    expect(b.state.likeBoosts?.blue ?? 0).toBe(0);
+    expect(b.state.fighters[0].likePower ?? 0).toBe(power);
+    expect(b.state.fighters[1].likePower).toBeUndefined();
   });
-  test('likes from team members combine; blue contributions stay separate', () => {
+  test('viewers on the same team progress independently across like batches', () => {
     const b = arena();
     const second = { id: 'r2', name: 'Second red' };
     b.apply({ id: 'r2', type: 'join', viewer: second, team: 'red' });
-    b.apply(like(12));
-    b.apply(like(8, second));
-    b.apply(like(19, blue));
-    expect(b.state.likeBoosts).toEqual({ red: 4, blue: 0 });
-    expect(b.state.likes).toEqual({ red: 0, blue: 19 });
+    b.apply(like(49));
+    b.apply(like(49, second));
+    b.apply(like(1));
+    expect(b.state.fighters[0].likePower).toBe(2);
+    expect(b.state.fighters[2].likePower).toBeUndefined();
+    b.apply(like(301, second));
+    expect(b.state.fighters[2].likePower).toBe(6);
+    expect(b.state.fighters[0].likePower).toBe(2);
   });
-  test('likes never shorten a longer gift power and power does not multiply to quadruple damage', () => {
+  test('gift power still doubles base damage for the team, with the personal bonus added once', () => {
     const b = arena();
     b.apply(gift('boost', 3));
     b.apply(like(100));
@@ -111,7 +115,7 @@ describe('audited game interaction cases', () => {
     Object.assign(r, { x: 190, y: 300, cooldown: 0 });
     Object.assign(bl, { x: 290, y: 300, cooldown: 99 });
     b.update(0.05);
-    expect(bl.hp).toBe(76);
+    expect(bl.hp).toBe(74);
   });
   test('team changes preserve wounds and cannot resurrect defeated fighters', () => {
     const b = arena(),

@@ -5,7 +5,7 @@ import { GIFTS, type AdminAction, type Team, type TeamGift } from './contracts';
 import './style.css';
 
 document.getElementById('app')!.innerHTML =
-  `<main class="control-room"><header class="control-heading"><div><small>TEAM ARENA</small><h1>Control room</h1></div><a href="/teams.html" target="team-arena">Open game ↗</a></header><p class="control-intro">Red vs blue · server-synchronized viewers and events</p><section id="login-panel" class="control-card"><h2>Admin access</h2><form id="login"><label for="admin-key">Admin key</label><div class="login-row"><input id="admin-key" type="password" autocomplete="current-password" required placeholder="Key from your server configuration"><button>Sign in</button></div></form></section><div id="admin-error" class="control-error" role="status" hidden></div><section id="controls" hidden><div class="control-status"><span id="server-status">Connecting…</span><b id="control-round">Round 1</b><span id="control-players">0 players</span></div><section class="control-card"><div class="control-row"><h2>Round</h2><button id="logout" class="subtle">Sign out</button></div><div class="control-buttons"><button id="pause">Pause</button><button id="resume">Resume</button><button id="restart">New round</button><button id="crowd">+8 viewers</button></div><label class="simulation-switch"><input type="checkbox" id="autoplay"> Automatic demo events</label></section><section class="control-card"><h2>Simulate a viewer</h2><div class="viewer-fields"><label>Viewer ID<input id="viewer-id" value="demo-host" maxlength="100"></label><label>Display name<input id="viewer-name" value="Luna" maxlength="32"></label><label>Team<select id="viewer-team"><option value="red">Red</option><option value="blue">Blue</option></select></label></div><div class="control-buttons"><button id="viewer-join">Join team</button><button id="viewer-like">20 likes</button><button id="viewer-follow">Follow / heal</button></div><label>Gift quantity<input id="gift-amount" type="number" min="1" max="1000000" value="1"></label><label class="simulation-switch"><input id="gift-use-team" type="checkbox" checked> Send to the selected team (otherwise use the viewer’s team)</label><div class="gift-actions">${Object.entries(
+  `<main class="control-room"><header class="control-heading"><div><small>TEAM ARENA</small><h1>Control room</h1></div><a href="/teams.html" target="team-arena">Open game ↗</a></header><p class="control-intro">Red vs blue · server-synchronized viewers and events</p><section id="login-panel" class="control-card"><h2>Admin access</h2><form id="login"><label for="admin-key">Admin key</label><div class="login-row"><input id="admin-key" type="password" autocomplete="current-password" required placeholder="Key from your server configuration"><button>Sign in</button></div></form></section><div id="admin-error" class="control-error" role="status" hidden></div><section id="controls" hidden><div class="control-status"><span id="server-status">Connecting…</span><b id="control-round">Round 1</b><span id="control-players">0 players</span></div><section class="control-card"><div class="control-row"><h2>Round</h2><button id="logout" class="subtle">Sign out</button></div><div class="control-buttons"><button id="pause">Pause</button><button id="resume">Resume</button><button id="restart">New round</button><button id="crowd">+8 viewers</button></div><label class="simulation-switch"><input type="checkbox" id="autoplay"> Automatic demo events</label></section><section class="control-card"><h2>Simulate a viewer</h2><div class="viewer-fields"><label>Viewer ID<input id="viewer-id" value="demo-host" maxlength="100"></label><label>Display name<input id="viewer-name" value="Luna" maxlength="32"></label><label>Team<select id="viewer-team"><option value="red">Red</option><option value="blue">Blue</option></select></label></div><div class="control-buttons"><button id="viewer-join">Join team</button><button id="viewer-like">50 likes</button><button id="viewer-follow">Follow / heal</button></div><label>Gift quantity<input id="gift-amount" type="number" min="1" max="1000000" value="1"></label><label class="simulation-switch"><input id="gift-use-team" type="checkbox" checked> Send to the selected team (otherwise use the viewer’s team)</label><div class="gift-actions">${Object.entries(
     GIFTS,
   )
     .map(
@@ -119,7 +119,7 @@ el('viewer-join').addEventListener('click', () =>
 el('viewer-like').addEventListener('click', () =>
   action({
     type: 'event',
-    event: { id: crypto.randomUUID(), type: 'like', viewer: viewer(), count: 20 },
+    event: { id: crypto.randomUUID(), type: 'like', viewer: viewer(), count: 50 },
   }),
 );
 el('viewer-follow').addEventListener('click', () =>
@@ -154,7 +154,9 @@ el('chat-form').addEventListener('submit', async (event) => {
 });
 client.onState((state) => {
   el('control-round').textContent =
-    `Round ${state.round} · ${state.paused ? 'paused' : state.phase}`;
+    state.live === 'waiting'
+      ? 'Waiting for TikTok LIVE'
+      : `Round ${state.round} · ${state.paused ? 'paused' : state.phase}`;
   el('control-players').textContent =
     `${state.fighters.filter((f) => !f.temporary).length} viewers`;
   autoplay.receive(state.autoplay);

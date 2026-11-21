@@ -1,7 +1,9 @@
 import { afterEach, expect, test, vi } from 'vitest';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { once } from 'node:events';
-import { resolve } from 'node:path';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
 import { EulerConnector, type ConnectorStatus } from '../server/live/euler';
 import { createBattleServer } from '../server/app';
 
@@ -17,6 +19,7 @@ async function setup(options: { creatorId?: string } = { creatorId: 'host' }) {
     distPath: resolve('dist'),
     seedDemo: false,
     demoJoin: false,
+    liveCollector: true,
   });
   await new Promise<void>((resolve) => app.server.listen(0, '127.0.0.1', resolve));
   cleanup.push(app.close);
@@ -51,16 +54,134 @@ async function setup(options: { creatorId?: string } = { creatorId: 'host' }) {
   cleanup.push(() => connector.stop());
   return { app, provider, connector, post, url, statuses };
 }
-function event(type: string, id: string, extra: Record<string, unknown> = {}) {
+function event(type: string, id: string, extra: Record<string, unknown> = {}, roomId = 'room-1') {
   return {
     type,
     data: {
-      common: { msgId: id, roomId: 'room-1' },
+      common: { msgId: id, roomId },
       user: { id: 'viewer-1', nickname: 'Viewer' },
       ...extra,
     },
   };
 }
+
+test('waiting freezes the arena, a reconnect preserves it, and confirmed LIVE end resets it', async () => {
+  const { app, provider, connector, post, url, statuses } = await setup();
+  const state = async () => (await fetch(url + 'state')).json();
+  const send = (socket: WebSocket, ...messages: unknown[]) =>
+    socket.send(JSON.stringify({ messages }));
+  const connect = (roomId: string) => ({
+    type: 'room.status',
+    data: { state: 'connected', roomId },
+  });
+  const chat = event('WebcastChatMessage', 'chat', { content: 'red' });
+  const likes = event('WebcastLikeMessage', 'likes', { count: 149, total: '9999' });
+  expect(await state()).toMatchObject({ live: 'waiting', round: 1, remaining: 120, fighters: [] });
+
+  let connection = once(provider, 'connection');
+  connector.start();
+  let [socket] = (await connection) as [WebSocket];
+  send(socket, connect('room-1'), chat, likes, likes);
+  await vi.waitFor(() => expect(app.battle.state.fighters[0]?.likePower).toBe(2));
+  expect(app.battle.state.viewerLikes?.['viewer:viewer-1']).toBe(149);
+  expect(await state()).not.toHaveProperty('viewerLikes');
+  expect(await state()).not.toHaveProperty('liveRoomId');
+
+  connection = once(provider, 'connection');
+  socket.close(1011);
+  [socket] = (await connection) as [WebSocket];
+  send(socket, connect('room-1'), event('WebcastLikeMessage', 'one-more', { count: 1 }));
+  await vi.waitFor(() => expect(app.battle.state.fighters[0]?.likePower).toBe(4));
+  expect(await state()).toMatchObject({ live: 'live', fighters: [{ likePower: 4 }] });
+  expect((await state()).remaining).toBeLessThan(120);
+
+  app.store.mapGift('flower', 'reinforce');
+  const queued = {
+    id: 'queued',
+    type: 'gift',
+    roomId: 'room-1',
+    recipientId: 'host',
+    viewer: { id: 'other', name: 'Other' },
+    giftId: 'flower',
+    giftName: 'Flower',
+    count: 1,
+    streak: false,
+    streakEnd: true,
+  };
+  expect(
+    await (await post('live/events', queued, { Authorization: 'Bearer events' })).json(),
+  ).toMatchObject({ status: 'queued' });
+  send(socket, { type: 'tiktok.disconnect', data: { reason: 4005 } }, chat, likes);
+  await vi.waitFor(() => expect(statuses.at(-1)).toMatchObject({ state: 'ended' }));
+  expect(await state()).toMatchObject({
+    live: 'waiting',
+    round: 1,
+    remaining: 120,
+    territory: 0.5,
+    effects: [],
+    activity: [],
+    fighters: [],
+  });
+  expect(app.store.diagnostics()).toMatchObject({
+    roster: [],
+    pending: 0,
+    gifts: [{ status: 'cosmetic' }],
+    catalog: [{ id: 'flower', action: 'reinforce' }],
+  });
+  expect((await post('live/events', queued, { Authorization: 'Bearer events' })).status).toBe(503);
+
+  send(
+    socket,
+    connect('room-2'),
+    event('WebcastChatMessage', 'chat', { content: 'blue' }, 'room-2'),
+  );
+  await vi.waitFor(async () =>
+    expect(await state()).toMatchObject({ live: 'live', round: 1, fighters: [{ team: 'blue' }] }),
+  );
+  expect(app.battle.state.fighters[0].likePower).toBeUndefined();
+  const closed = once(socket, 'close');
+  socket.close(4404);
+  await closed;
+  await vi.waitFor(async () =>
+    expect(await state()).toMatchObject({ live: 'waiting', remaining: 120, fighters: [] }),
+  );
+});
+
+test('a server restart restores personal power only when the provider confirms the same room', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'arena-live-'));
+  cleanup.push(() => rmSync(directory, { recursive: true, force: true }));
+  const start = async () => {
+    const app = createBattleServer({
+      adminKey: 'admin',
+      eventKey: 'events',
+      statePath: join(directory, 'arena.sqlite'),
+      distPath: resolve('dist'),
+      liveCollector: true,
+    });
+    cleanup.push(app.close);
+    await new Promise<void>((done) => app.server.listen(0, '127.0.0.1', done));
+    const port = (app.server.address() as { port: number }).port;
+    return {
+      app,
+      state: async () => (await fetch(`http://127.0.0.1:${port}/api/teams/state`)).json(),
+    };
+  };
+  const room = { roomId: 'room-1' };
+  const viewer = { id: 'first', name: 'First' };
+  const original = await start();
+  original.app.live.bind(room);
+  original.app.live.accept({ ...room, id: 'chat', type: 'chat', viewer, message: 'red' });
+  original.app.live.accept({ ...room, id: 'likes', type: 'like', viewer, count: 150 });
+  await original.app.close();
+
+  const restored = await start();
+  expect(await restored.state()).toMatchObject({ live: 'waiting', fighters: [] });
+  restored.app.live.bind(room);
+  expect(await restored.state()).toMatchObject({ live: 'live', fighters: [{ likePower: 4 }] });
+  restored.app.live.bind({ roomId: 'room-2' });
+  expect(await restored.state()).toMatchObject({ live: 'live', round: 1, fighters: [] });
+  expect(restored.app.store.diagnostics().roster).toEqual([]);
+});
 
 test('real socket → normalization → SQLite → authoritative HTTP/WS state; mapping and diagnostics require admin', async () => {
   const { app, provider, connector, post, url } = await setup();
@@ -114,8 +235,8 @@ test('real socket → normalization → SQLite → authoritative HTTP/WS state; 
     }),
   );
   await vi.waitFor(() => expect(app.battle.state.fighters).toHaveLength(7));
-  expect(app.battle.state.likeBoosts?.red).toBeGreaterThan(14);
-  expect(app.battle.state.likes.red).toBe(1);
+  expect(app.battle.state.fighters[0].likePower).toBe(2);
+  expect(app.battle.state.fighters.slice(1).every((f) => !f.likePower)).toBe(true);
   const diagnostics = await (
     await fetch(url + 'admin/diagnostics', { headers: { Cookie: cookie } })
   ).json();
@@ -183,7 +304,7 @@ test('LIVE chat and likes work without a creator ID while gifts wait for a verif
   );
   expect(app.battle.state.fighters).toHaveLength(1);
   expect(app.battle.state.fighters[0].team).toBe('red');
-  expect(app.battle.state.likes.red).toBe(5);
+  expect(app.battle.state.viewerLikes?.['viewer:viewer-1']).toBe(5);
 
   const result = await post(
     'live/events',

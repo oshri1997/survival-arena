@@ -1,4 +1,4 @@
-import { hasTeamPower, MAX_FIGHTERS, ROUND_SECONDS, WORLD } from './contracts';
+import { hasTeamPower, LIKE_MILESTONES, MAX_FIGHTERS, ROUND_SECONDS, WORLD } from './contracts';
 import type { AudienceEvent, BattleEffect, BattleState, Fighter, Team, Viewer } from './contracts';
 import { Patrol } from './Patrol';
 import { FIELD, territoryRange } from './territory';
@@ -14,6 +14,23 @@ const SMALL_BATTLE_SIZE = 6;
 const SMALL_BATTLE_RANGE = 215;
 const clamp = (value: number, minimum: number, maximum: number) =>
   Math.max(minimum, Math.min(maximum, value));
+const likePower = (likes: number) => 2 * LIKE_MILESTONES.filter((limit) => likes >= limit).length;
+const freshState = (sequence = 0): BattleState => ({
+  round: 1,
+  remaining: ROUND_SECONDS,
+  phase: 'battle',
+  winner: null,
+  paused: false,
+  autoplay: false,
+  territory: 0.5,
+  scores: { red: 0, blue: 0 },
+  shields: { red: 0, blue: 0 },
+  boosts: { red: 0, blue: 0 },
+  fighters: [],
+  effects: [],
+  activity: [],
+  sequence,
+});
 
 /** Server-owned game rules. The browser interpolates snapshots and renders effects. */
 export class Battle {
@@ -25,23 +42,7 @@ export class Battle {
     restored?: BattleState,
   ) {
     this.patrol = new Patrol(this.random);
-    this.state = restored ?? {
-      round: 1,
-      remaining: ROUND_SECONDS,
-      phase: 'battle',
-      winner: null,
-      paused: false,
-      autoplay: false,
-      territory: 0.5,
-      scores: { red: 0, blue: 0 },
-      shields: { red: 0, blue: 0 },
-      boosts: { red: 0, blue: 0 },
-      likes: { red: 0, blue: 0 },
-      fighters: [],
-      effects: [],
-      activity: [],
-      sequence: 0,
-    };
+    this.state = restored ?? freshState();
     this.nextFighter = Math.max(
       0,
       ...this.state.fighters.map((f) => Number(f.id.replace('fighter-', '')) || 0),
@@ -65,6 +66,7 @@ export class Battle {
     };
   }
   private create(viewer: Viewer, team: Team, temporary = false): Fighter {
+    const power = temporary ? 0 : likePower(this.state.viewerLikes?.[`viewer:${viewer.id}`] ?? 0);
     return {
       id: `fighter-${++this.nextFighter}`,
       ownerId: viewer.id,
@@ -75,6 +77,7 @@ export class Battle {
       hp: 100,
       maxHp: 100,
       level: 1,
+      ...(power ? { likePower: power } : {}),
       kills: 0,
       cooldown: this.random() * 0.7,
       respawn: 0,
@@ -89,8 +92,13 @@ export class Battle {
     this.state.fighters = viewers.map(({ viewer, team }) => this.create(viewer, team));
     this.patrol.reset();
   }
+  resetSession(roomId?: string) {
+    this.state = freshState(this.state.sequence);
+    this.state.liveRoomId = roomId;
+    this.patrol.reset();
+  }
   apply(event: AudienceEvent, supporterTeam?: Team): EventResult {
-    if (this.state.phase !== 'battle')
+    if (this.state.phase !== 'battle' && event.type !== 'like')
       return { accepted: false, reason: 'The next round starts shortly' };
     if (event.type === 'viewerJoined') {
       this.announce(event.viewer.name, 'arrived · chat red or blue');
@@ -142,14 +150,18 @@ export class Battle {
     }
     if (!eventTeam) return { accepted: false, reason: 'Join red or blue first' };
     if (event.type === 'like') {
-      this.state.likes[eventTeam] += event.count;
-      if (this.state.likes[eventTeam] >= 20) {
-        const charges = Math.floor(this.state.likes[eventTeam] / 20);
-        this.state.likes[eventTeam] %= 20;
-        const power = (this.state.likeBoosts ??= { red: 0, blue: 0 });
-        power[eventTeam] = Math.min(16, power[eventTeam] + 4 * charges);
-        this.effect({ type: 'boost', team: eventTeam, x: eventTeam === 'red' ? 90 : 390, y: 400 });
-        this.announce(event.viewer.name, 'charged team power', eventTeam);
+      const totals = (this.state.viewerLikes ??= {});
+      const key = `viewer:${event.viewer.id}`;
+      const previous = totals[key] ?? 0;
+      const total = Math.min(LIKE_MILESTONES[LIKE_MILESTONES.length - 1], previous + event.count);
+      totals[key] = total;
+      const power = likePower(total);
+      if (power > likePower(previous)) {
+        if (owner) {
+          owner.likePower = power;
+          this.effect({ type: 'boost', team: eventTeam, x: owner.x, y: owner.y });
+        }
+        this.announce(event.viewer.name, `unlocked +${power} damage`, eventTeam);
       }
     }
     if (event.type === 'follow') {
@@ -243,8 +255,6 @@ export class Battle {
     s.scores = { red: 0, blue: 0 };
     s.shields = { red: 0, blue: 0 };
     s.boosts = { red: 0, blue: 0 };
-    s.likeBoosts = { red: 0, blue: 0 };
-    s.likes = { red: 0, blue: 0 };
     s.fighters = s.fighters.filter((f) => !f.temporary);
     s.effects = [];
     this.patrol.reset();
@@ -295,7 +305,6 @@ export class Battle {
     const attackRange = smallBattle ? SMALL_BATTLE_RANGE : 180;
     this.patrol.update(s.fighters, dt, s.territory, s.round, smallBattle ? attackRange : undefined);
     const attacks: { target: Fighter; amount: number; attacker: Fighter }[] = [];
-    const engaged = new Set<Team>();
     for (const f of s.fighters) {
       if (f.hp <= 0 || respawned.has(f.id)) continue;
       let target: Fighter | undefined,
@@ -309,34 +318,30 @@ export class Battle {
         }
       }
       f.cooldown = Math.max(0, f.cooldown - dt);
-      if (target && distance < attackRange) {
-        engaged.add(f.team);
-        if (f.cooldown === 0) {
-          f.cooldown = smallBattle ? 0.52 : 0.65;
-          const powered = hasTeamPower(s, f.team);
-          this.effect({
-            type: 'shot',
-            team: f.team,
-            x: f.x,
-            y: f.y,
-            targetX: target.x,
-            targetY: target.y,
-            fighterId: f.id,
-            ...(powered ? { powered } : {}),
-          });
-          attacks.push({
-            target,
-            amount: (10 + f.level * 2) * (powered ? 2 : 1),
-            attacker: f,
-          });
-        }
+      if (target && distance < attackRange && f.cooldown === 0) {
+        f.cooldown = smallBattle ? 0.52 : 0.65;
+        const giftPower = hasTeamPower(s, f.team);
+        const bonus = f.likePower ?? 0;
+        const powered = giftPower || bonus > 0;
+        this.effect({
+          type: 'shot',
+          team: f.team,
+          x: f.x,
+          y: f.y,
+          targetX: target.x,
+          targetY: target.y,
+          fighterId: f.id,
+          ...(powered ? { powered } : {}),
+        });
+        attacks.push({
+          target,
+          amount: (10 + f.level * 2) * (giftPower ? 2 : 1) + bonus,
+          attacker: f,
+        });
       }
     }
     // Resolve after everyone chooses an attack, so roster order gives neither team a first strike.
     for (const attack of attacks) this.damage(attack.target, attack.amount, attack.attacker);
-    // Unlike gift buffs, like power is spent only while the team has an opponent in range.
-    if (s.likeBoosts)
-      for (const team of engaged) s.likeBoosts[team] = Math.max(0, s.likeBoosts[team] - dt);
     this.patrol.constrain(s.fighters, s.territory, s.round);
     const won = s.territory >= 0.9 ? 'red' : s.territory <= 0.1 ? 'blue' : null;
     if (won || s.remaining === 0) {

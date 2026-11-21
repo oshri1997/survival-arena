@@ -11,6 +11,7 @@ import type { BattleFeed } from './Client';
 import { avatar } from './avatars';
 import { Sound } from '../audio/Sound';
 import { confine, frontierX } from './territory';
+import { smoothPosition } from './motion';
 const color = (team: Team) => (team === 'red' ? 0xff5770 : 0x43baff);
 interface Actor {
   image: Phaser.GameObjects.Image;
@@ -39,6 +40,7 @@ export class TeamScene extends Phaser.Scene {
   private radius = 22;
   private boardKey = '';
   private motionTime = 0;
+  private snapshotTime = 0;
   private unsubscribe?: () => void;
   constructor(
     private client: BattleFeed,
@@ -54,6 +56,8 @@ export class TeamScene extends Phaser.Scene {
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.unsubscribe?.());
   }
   private snapshot(state: BattleSnapshot) {
+    this.snapshotTime = performance.now();
+    if (state.live === 'waiting') this.effects = [];
     if (this.firstSnapshot) {
       this.lastEffect = state.sequence;
       this.firstSnapshot = false;
@@ -73,8 +77,9 @@ export class TeamScene extends Phaser.Scene {
         this.effects.push({ ...effect, life: effect.type === 'meteor' ? 0.8 : 0.35 });
     this.lastEffect = state.sequence;
     this.effects = this.effects.slice(-100);
+    const fighterIds = new Set(state.fighters.map((fighter) => fighter.id));
     for (const [id, actor] of this.actors)
-      if (!state.fighters.some((f) => f.id === id)) {
+      if (!fighterIds.has(id)) {
         actor.image.destroy();
         actor.ring.destroy();
         actor.label.destroy();
@@ -139,7 +144,10 @@ export class TeamScene extends Phaser.Scene {
       actor.wasAlive = fighter.hp > 0;
       actor.model = fighter;
       actor.label.setText(fighter.name.slice(0, 14));
-      actor.level.setText(fighter.level > 1 ? '★'.repeat(fighter.level - 1) : '');
+      const stars = '★'.repeat(fighter.level - 1);
+      actor.level.setText(
+        fighter.likePower ? `${stars}${stars ? ' ' : ''}+${fighter.likePower}` : stars,
+      );
       actor.ring.setStrokeStyle(fighter.level >= 3 ? 4 : 3, color(fighter.team));
     }
   }
@@ -161,7 +169,9 @@ export class TeamScene extends Phaser.Scene {
       60,
     );
     this.territory = Phaser.Math.Linear(this.territory, state.territory, Math.min(1, dt * 5));
-    if (!state.paused && state.phase === 'battle') this.motionTime += dt;
+    const moving = !state.paused && state.phase === 'battle' && state.live !== 'waiting';
+    const snapshotAge = moving ? (performance.now() - this.snapshotTime) / 1000 : 0;
+    if (moving) this.motionTime += dt;
     const boardKey = `${width}:${height}:${Math.round((this.territory * width) / 2)}:${state.round}`;
     if (this.boardKey !== boardKey) {
       this.drawBoard(width, height);
@@ -180,10 +190,7 @@ export class TeamScene extends Phaser.Scene {
         continue;
       }
       const position = confine(
-        {
-          x: Phaser.Math.Linear(actor.x, f.x, 1 - Math.exp(-dt * 12)),
-          y: Phaser.Math.Linear(actor.y, f.y, 1 - Math.exp(-dt * 12)),
-        },
+        smoothPosition(actor, f, dt, snapshotAge),
         f.team,
         this.territory,
         state.round,
@@ -197,14 +204,11 @@ export class TeamScene extends Phaser.Scene {
           Math.abs(position.x - front),
         ) - 5;
       const radius = Math.min(this.radius + (f.level - 1) * 2, this.mapX(Math.max(7, clearance)));
-      const moving =
-        state.paused || state.phase !== 'battle'
-          ? 0
-          : Math.min(1, Math.hypot(f.vx ?? 0, f.vy ?? 0) / 42);
+      const speed = moving ? Math.min(1, Math.hypot(f.vx ?? 0, f.vy ?? 0) / 42) : 0;
       const x = this.mapX(position.x),
         y =
           this.mapY(position.y) +
-          Math.sin(this.motionTime * 5 + actor.phase) * moving * this.radius * 0.045;
+          Math.sin(this.motionTime * 5 + actor.phase) * speed * this.radius * 0.045;
       actor.recoil = Math.max(0, actor.recoil - dt * 7);
       actor.impact = Math.max(0, actor.impact - dt * 5);
       const pulse = 1 - actor.recoil * 0.06 + actor.impact * 0.055;
@@ -212,7 +216,11 @@ export class TeamScene extends Phaser.Scene {
         .setPosition(x, y)
         .setDisplaySize((radius * 2 - 5) * pulse, (radius * 2 - 5) * pulse);
       actor.image.setRotation(
-        Phaser.Math.Linear(actor.image.rotation, ((f.vx ?? 0) / 42) * 0.055, Math.min(1, dt * 8)),
+        Phaser.Math.Linear(
+          actor.image.rotation,
+          moving ? ((f.vx ?? 0) / 42) * 0.055 : 0,
+          1 - Math.exp(-dt * 8),
+        ),
       );
       actor.image.setTint(actor.impact > 0.3 ? 0xffd7cb : 0xffffff);
       actor.ring.setPosition(x, y).setRadius(radius).setFillStyle(color(f.team), 0.12);
@@ -242,7 +250,7 @@ export class TeamScene extends Phaser.Scene {
         h.strokeCircle(x, y, radius + 5);
       }
       actor.ring.setStrokeStyle(f.level >= 3 ? 4 : 3, color(f.team));
-      if (state.phase === 'battle' && hasTeamPower(state, f.team)) {
+      if (state.phase === 'battle' && (f.likePower || hasTeamPower(state, f.team))) {
         h.lineStyle(3, 0xffe38b, 0.95);
         h.strokeCircle(x, y, radius + 3);
       }

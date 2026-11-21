@@ -26,6 +26,7 @@ const app = createBattleServer({
   distPath: resolve('dist'),
   demoJoin: process.env.TEAM_DEMO_JOIN !== 'false',
   seedDemo: process.env.TEAM_SEED_DEMO !== 'false',
+  liveCollector: Boolean(username && apiKey),
 });
 const connector =
   username && apiKey
@@ -35,7 +36,7 @@ const connector =
         creatorId,
         accept: app.live.accept,
         bind: app.live.bind,
-        status: (status) => app.live.status({ ...status }),
+        status: app.live.status,
       })
     : undefined;
 connector?.start();

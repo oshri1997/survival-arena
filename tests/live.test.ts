@@ -117,7 +117,7 @@ describe('durable gift lifecycle and roster', () => {
       details: { secondsAdded: 0 },
     });
   });
-  test('over 100 registered viewers rotate fairly; waiting viewers can still support their team', () => {
+  test('over 100 registered viewers rotate fairly; waiting viewers bank their own likes', () => {
     const { store, battle, joinViewer } = setup();
     for (let i = 0; i < 125; i++)
       expect(joinViewer(`v${i}`, i % 2 ? 'blue' : 'red').accepted).toBe(true);
@@ -131,11 +131,10 @@ describe('durable gift lifecycle and roster', () => {
         count: 101,
       }),
     ).toMatchObject({ accepted: true });
-    expect(battle.state.likeBoosts?.red).toBe(16);
-    expect(battle.state.likes.red).toBe(1);
+    expect(battle.state.fighters.every((f) => !f.likePower)).toBe(true);
     const first = new Set(battle.state.fighters.map((f) => f.ownerId));
     store.restart(battle);
-    expect(battle.state.fighters.some((f) => f.ownerId === 'v124')).toBe(true);
+    expect(battle.state.fighters.find((f) => f.ownerId === 'v124')?.likePower).toBe(2);
     const played = new Set([...first, ...battle.state.fighters.map((f) => f.ownerId)]);
     expect(played.size).toBe(125);
     expect(store.diagnostics().roster.reduce((sum, row) => sum + Number(row.count), 0)).toBe(125);

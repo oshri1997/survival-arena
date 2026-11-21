@@ -1,4 +1,32 @@
 import { test, expect } from '@playwright/test';
+import { Battle } from '../../src/teams/Battle';
+
+test('the live arena clears its roster and timer when the broadcast ends', async ({ page }) => {
+  const battle = new Battle();
+  battle.apply({
+    id: 'join',
+    type: 'join',
+    viewer: { id: 'red', name: 'Red Viewer' },
+    team: 'red',
+  });
+  const active = { ...battle.state, live: 'live', connected: true, demoJoin: false };
+  battle.resetSession();
+  const waiting = { ...battle.state, live: 'waiting', connected: true, demoJoin: false };
+  let endBroadcast: (() => void) | undefined;
+  await page.routeWebSocket('**/api/teams/socket', (socket) => {
+    socket.send(JSON.stringify({ type: 'state', state: active }));
+    endBroadcast = () => socket.send(JSON.stringify({ type: 'state', state: waiting }));
+  });
+  await page.goto('/teams.html');
+  await expect(page.locator('#team-game canvas')).toBeVisible();
+  await expect(page.locator('#red-count')).toHaveText('1 players');
+  await expect(page.locator('#clock')).toHaveText('2:00');
+  endBroadcast?.();
+  await expect(page.locator('#mode')).toHaveText('WAITING FOR LIVE');
+  await expect(page.locator('#red-count')).toHaveText('0 players');
+  await expect(page.locator('#clock')).toHaveText('—');
+  await expect(page.locator('.join-controls')).toBeHidden();
+});
 
 test('networked team battle fills mobile screen; separate authenticated admin sends working events across browsers', async ({
   page,
@@ -96,9 +124,10 @@ test('networked team battle fills mobile screen; separate authenticated admin se
   await admin.locator('#viewer-name').fill('Team Explorer');
   await admin.getByRole('button', { name: 'Join team', exact: true }).click();
   await expect(admin.locator('#roster')).toContainText('Team Explorer');
-  await admin.getByRole('button', { name: '20 likes', exact: true }).click();
-  await expect(page.locator('#red-power')).toBeVisible();
-  await expect(other.locator('#red-power')).toBeVisible();
+  await admin.getByRole('button', { name: '50 likes', exact: true }).click();
+  await expect(page.locator('#team-notice')).toContainText('Team Explorer unlocked +2 damage');
+  await expect(other.locator('#team-notice')).toContainText('Team Explorer unlocked +2 damage');
+  await expect(page.locator('#red-power')).toBeHidden();
   await expect(page.locator('#blue-power')).toBeHidden();
   await admin.getByRole('button', { name: 'Shield', exact: false }).click();
   await expect(admin.locator('#action-result')).toContainText('QUEUED');

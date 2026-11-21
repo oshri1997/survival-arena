@@ -58,6 +58,7 @@ export interface Fighter {
   hp: number;
   maxHp: number;
   level: number;
+  likePower?: number;
   kills: number;
   cooldown: number;
   respawn: number;
@@ -91,24 +92,26 @@ export interface BattleState {
   scores: Record<Team, number>;
   shields: Record<Team, number>;
   boosts: Record<Team, number>;
-  likeBoosts?: Record<Team, number>;
-  likes: Record<Team, number>;
+  viewerLikes?: Record<string, number>;
+  liveRoomId?: string;
   fighters: Fighter[];
   effects: BattleEffect[];
   activity: BattleActivity[];
   sequence: number;
 }
-export interface BattleSnapshot extends BattleState {
+export interface BattleSnapshot extends Omit<BattleState, 'viewerLikes' | 'liveRoomId'> {
   connected: true;
   demoJoin: boolean;
+  live?: 'waiting' | 'live';
 }
 export const WORLD = { width: 480, height: 800 };
 export const MAX_FIGHTERS = 100;
 // Leave room for gift allies. Registered viewers rotate fairly between rounds.
 export const MAX_ACTIVE_VIEWERS = 80;
 export const ROUND_SECONDS = 120;
-export const hasTeamPower = (state: BattleState, team: Team) =>
-  state.boosts[team] > 0 || (state.likeBoosts?.[team] ?? 0) > 0;
+export const hasTeamPower = (state: Pick<BattleState, 'boosts'>, team: Team) =>
+  state.boosts[team] > 0;
+export const LIKE_MILESTONES = [50, 150, 350] as const;
 export const GIFTS: Record<TeamGift, { name: string; description: string }> = {
   thanks: { name: 'Thank you', description: 'Cosmetic acknowledgement, no team required' },
   reinforce: { name: 'Reinforcements', description: 'Deploy 3 allies' },

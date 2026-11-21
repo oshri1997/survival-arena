@@ -51,6 +51,7 @@ let activity = 0,
 let ownViewerId: string | undefined;
 let waitingForTeam: Team | undefined;
 client.onState((state) => {
+  const waiting = state.live === 'waiting';
   document.body.dataset.connected = 'true';
   document.body.dataset.phase = state.paused ? 'paused' : state.phase;
   if (ownViewerId) {
@@ -75,15 +76,24 @@ client.onState((state) => {
       state.phase !== 'battle' || !hasTeamPower(state, team);
   }
   document.getElementById('territory-red')!.style.width = `${state.territory * 100}%`;
-  document.getElementById('clock')!.textContent = state.paused
-    ? 'Ⅱ'
-    : `${Math.floor(Math.ceil(state.remaining) / 60)}:${String(Math.ceil(state.remaining) % 60).padStart(2, '0')}`;
-  document.getElementById('round')!.textContent = `ROUND ${state.round}`;
-  document.getElementById('mode')!.textContent = localDemo
-    ? 'LOCAL DEMO'
-    : state.autoplay || state.demoJoin
-      ? 'DEMO LIVE'
-      : 'TEAM ARENA';
+  document.getElementById('clock')!.textContent = waiting
+    ? '—'
+    : state.paused
+      ? 'Ⅱ'
+      : `${Math.floor(Math.ceil(state.remaining) / 60)}:${String(Math.ceil(state.remaining) % 60).padStart(2, '0')}`;
+  document.getElementById('round')!.textContent = waiting ? '' : `ROUND ${state.round}`;
+  document.getElementById('mode')!.textContent = waiting
+    ? 'WAITING FOR LIVE'
+    : localDemo
+      ? 'LOCAL DEMO'
+      : state.autoplay || state.demoJoin
+        ? 'DEMO LIVE'
+        : 'TEAM ARENA';
+  document.querySelector<HTMLElement>('.join-controls')!.hidden = waiting;
+  if (waiting) {
+    noticeUntil = 0;
+    document.getElementById('team-notice')!.hidden = true;
+  }
   document.getElementById('team-result')!.hidden = state.phase !== 'result';
   document.getElementById('winner')!.textContent =
     state.winner === 'draw' ? 'DRAW' : `${state.winner?.toUpperCase()} WINS`;

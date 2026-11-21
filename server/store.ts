@@ -187,7 +187,7 @@ export class Store {
         status: 'cosmetic',
         reason: 'Chat acknowledged; use red or blue to select a team',
       };
-    if (battle.state.phase !== 'battle') {
+    if (battle.state.phase !== 'battle' && event.type !== 'like') {
       this.ack(battle, event.viewer);
       return {
         accepted: true,
@@ -301,6 +301,15 @@ export class Store {
       battle.restart();
       this.rotate(battle);
       this.flush(battle);
+    });
+  }
+  resetLive(battle: Battle, roomId?: string) {
+    this.atomic(battle, () => {
+      this.db.exec(`DELETE FROM roster;
+        UPDATE gifts SET result=json_set(result,'$.status','cosmetic','$.reason','Broadcast ended before delivery') WHERE status='queued';
+        UPDATE events SET result=(SELECT result FROM gifts WHERE gifts.id=events.id) WHERE id IN (SELECT id FROM gifts WHERE status='queued');
+        UPDATE gifts SET status='cosmetic' WHERE status='queued';`);
+      battle.resetSession(roomId);
     });
   }
   diagnostics() {

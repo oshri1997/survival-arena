@@ -118,6 +118,8 @@ export class EulerConnector {
   private heartbeat?: ReturnType<typeof setInterval>;
   private stopped = false;
   private binding?: LiveBinding;
+  private lastRoomId?: string;
+  private endedRoomId?: string;
   private status: ConnectorStatus;
   constructor(private options: Options) {
     this.status = {
@@ -195,18 +197,17 @@ export class EulerConnector {
       clearInterval(this.heartbeat);
       this.socket = undefined;
       const terminal = [4400, 4401, 4403].includes(code);
-      const offline = code === 4404 || code === 4005;
-      this.report({
-        state: this.stopped ? 'stopped' : offline ? (code === 4005 ? 'ended' : 'offline') : 'error',
-        lastCloseCode: code,
-        reason: terminal
-          ? 'Check provider credentials, permissions and configuration'
-          : code === 4429
-            ? 'Provider connection quota reached'
-            : offline
-              ? 'Waiting for the broadcaster to go LIVE'
+      const offline = !this.stopped && this.reportOffline(code);
+      if (!offline)
+        this.report({
+          state: this.stopped ? 'stopped' : 'error',
+          lastCloseCode: code,
+          reason: terminal
+            ? 'Check provider credentials, permissions and configuration'
+            : code === 4429
+              ? 'Provider connection quota reached'
               : 'Provider disconnected; delivery gap possible',
-      });
+        });
       if (!this.stopped && !terminal) {
         const delay =
           this.options.retryMs ??
@@ -215,8 +216,27 @@ export class EulerConnector {
       }
     });
   }
+  private reportOffline(code: number) {
+    if (code !== 4005 && code !== 4404) return false;
+    this.endRoom();
+    this.report({
+      state: code === 4005 ? 'ended' : 'offline',
+      lastCloseCode: code,
+      reason: 'Waiting for the broadcaster to go LIVE',
+    });
+    return true;
+  }
+  private endRoom(roomId = this.lastRoomId) {
+    if (roomId) this.endedRoomId = roomId;
+    this.binding = undefined;
+    this.lastRoomId = undefined;
+  }
   private receive(input: unknown) {
     const frame = frameSchema.parse(input);
+    if (frame.type === 'tiktok.disconnect') {
+      const data = z.object({ reason: z.number() }).parse(frame.data);
+      if (this.reportOffline(data.reason)) return;
+    }
     if (frame.type === 'room.status') {
       const data = z
         .object({
@@ -224,12 +244,22 @@ export class EulerConnector {
           roomId: identifier.optional(),
         })
         .parse(frame.data);
-      if (data.roomId) this.bind(data.roomId);
+      if (data.state === 'ended' || data.state === 'offline') {
+        if (data.roomId && this.lastRoomId && data.roomId !== this.lastRoomId) return;
+        this.endRoom(data.roomId);
+      } else if (data.state === 'connected' && data.roomId) {
+        if (data.roomId === this.endedRoomId) return;
+        this.bind(data.roomId);
+      }
       this.report({ state: data.state, reason: undefined });
       return;
     }
     const event = normalizeEuler(frame.type, frame.data);
-    if (!event) {
+    if (
+      !event ||
+      event.roomId === this.endedRoomId ||
+      (this.binding && event.roomId !== this.binding.roomId)
+    ) {
       this.report({ ignored: this.status.ignored + 1 });
       return;
     }
@@ -243,8 +273,11 @@ export class EulerConnector {
     this.report({ state: 'connected', lastEventAt: Date.now(), reason: undefined });
   }
   private bind(roomId: string) {
-    this.binding = { roomId, creatorId: this.options.creatorId };
-    this.options.bind(this.binding);
+    if (this.binding?.roomId === roomId) return;
+    const binding = { roomId, creatorId: this.options.creatorId };
+    this.options.bind(binding);
+    this.binding = binding;
+    this.lastRoomId = roomId;
   }
   stop() {
     this.stopped = true;

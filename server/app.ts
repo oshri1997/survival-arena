@@ -15,6 +15,7 @@ import {
 } from '../src/teams/contracts';
 import { Store } from './store';
 import { liveEventSchema, mappingSchema, type LiveBinding } from './live/contracts';
+import type { ConnectorStatus } from './live/euler';
 
 interface ServerOptions {
   adminKey: string;
@@ -24,6 +25,7 @@ interface ServerOptions {
   demoJoin?: boolean;
   seedDemo?: boolean;
   liveBinding?: LiveBinding;
+  liveCollector?: boolean;
 }
 const safeEqual = (left: string, right: string) => {
   const a = Buffer.from(left),
@@ -87,7 +89,9 @@ export function createBattleServer(options: ServerOptions) {
     last = Date.now(),
     lastSave = last;
   const demoJoin = options.demoJoin ?? true;
+  const waitingState = options.liveCollector ? new Battle().state : undefined;
   let liveBinding = options.liveBinding;
+  let clearedOffline = false;
   let liveStatus: Record<string, unknown> = { state: 'disabled' };
   const accept = (event: AudienceEvent) => store.ingest(battle, event);
   const addCrowd = (count: number) => {
@@ -97,12 +101,27 @@ export function createBattleServer(options: ServerOptions) {
       accept({ id: randomUUID(), type: 'join', viewer, team: index % 2 ? 'blue' : 'red' });
     }
   };
-  if (!restored && options.seedDemo !== false) {
+  if (!options.liveCollector && !restored && options.seedDemo !== false) {
     addCrowd(24);
     battle.state.autoplay = true;
     store.save(battle.state);
   }
-  const snapshot = (): BattleSnapshot => ({ ...battle.state, connected: true, demoJoin });
+  const waitingForLive = () => !!waitingState && !liveBinding;
+  const snapshot = (): BattleSnapshot => {
+    const waiting = waitingForLive();
+    const {
+      viewerLikes: _likes,
+      liveRoomId: _room,
+      ...state
+    } = waiting && waitingState ? waitingState : battle.state;
+    return {
+      ...state,
+      sequence: battle.state.sequence,
+      connected: true,
+      demoJoin: demoJoin && !waiting,
+      ...(options.liveCollector ? { live: waiting ? 'waiting' : 'live' } : {}),
+    };
+  };
   const broadcast = () => {
     const message = JSON.stringify({ type: 'state', state: snapshot() });
     for (const socket of sockets.clients)
@@ -250,6 +269,10 @@ export function createBattleServer(options: ServerOptions) {
             respond(res, 400, { error: 'Invalid event', details: parsed.error.flatten() });
             return;
           }
+          if (waitingForLive()) {
+            respond(res, 409, { error: 'Waiting for TikTok LIVE' });
+            return;
+          }
           const result = accept(parsed.data);
           respond(res, result.accepted ? 200 : 409, result);
           broadcast();
@@ -284,6 +307,10 @@ export function createBattleServer(options: ServerOptions) {
             return;
           }
           const action = parsed.data;
+          if (waitingForLive()) {
+            respond(res, 409, { error: 'Waiting for TikTok LIVE' });
+            return;
+          }
           if (action.type === 'pause') battle.state.paused = action.paused;
           if (action.type === 'restart') store.restart(battle);
           if (action.type === 'autoplay') battle.state.autoplay = action.enabled;
@@ -300,7 +327,7 @@ export function createBattleServer(options: ServerOptions) {
           return;
         }
         if (path === '/api/teams/join') {
-          if (!demoJoin) {
+          if (!demoJoin || waitingForLive()) {
             respond(res, 403, { error: 'Join through chat in the connected stream' });
             return;
           }
@@ -397,6 +424,7 @@ export function createBattleServer(options: ServerOptions) {
     const now = Date.now(),
       elapsed = Math.min((now - last) / 1000, 0.5);
     last = now;
+    if (waitingForLive()) return;
     for (let remaining = elapsed; remaining > 0; remaining -= 0.05)
       store.tick(battle, Math.min(0.05, remaining));
     if (battle.state.autoplay && !battle.state.paused && battle.state.phase === 'battle') {
@@ -434,10 +462,28 @@ export function createBattleServer(options: ServerOptions) {
     store,
     live: {
       bind: (binding: LiveBinding) => {
+        if (options.liveCollector && battle.state.liveRoomId !== binding.roomId)
+          store.resetLive(battle, binding.roomId);
         liveBinding = binding;
+        clearedOffline = false;
+        broadcast();
       },
-      status: (status: Record<string, unknown>) => {
-        liveStatus = status;
+      status: (status: ConnectorStatus) => {
+        liveStatus = { ...status };
+        if (
+          !options.liveCollector ||
+          clearedOffline ||
+          !['offline', 'ended'].includes(status.state)
+        )
+          return;
+        liveBinding = undefined;
+        try {
+          store.resetLive(battle);
+          clearedOffline = true;
+        } catch {
+          liveStatus.reason = 'Arena reset could not be saved; retrying on the next offline check';
+        }
+        broadcast();
       },
       accept: (event: import('./live/contracts').LiveEvent) => {
         if (!liveBinding) throw new Error('LIVE room binding required');

@@ -65,8 +65,8 @@ describe('team battle rules', () => {
     battle.apply({ ...gift('shield'), team: 'blue' });
     battle.apply(gift('meteor'));
     expect(blue.hp).toBeCloseTo(100 - 55 / 4);
-    battle.apply({ id: 'likes', type: 'like', viewer, count: 40 });
-    expect(battle.state.likeBoosts?.red).toBe(8);
+    battle.apply({ id: 'likes', type: 'like', viewer, count: 50 });
+    expect(red.likePower).toBe(2);
     red.hp = 40;
     battle.apply({ id: 'follow', type: 'follow', viewer });
     expect(red.hp).toBe(65);
@@ -122,26 +122,31 @@ describe('team battle rules', () => {
   });
 });
 
-test('like power survives the wait and doubles the first hit, then wears off in combat', () => {
+test('personal like power survives intermission, round rotation and switching teams', () => {
   const battle = joined();
   const [red, blue] = battle.state.fighters;
-  // Keep blue out of play long enough that the old four-second timer would have expired.
   blue.hp = 0;
   blue.respawn = 30;
-  battle.apply({ id: 'early-likes', type: 'like', viewer, count: 20 });
+  battle.apply({ id: 'early-likes', type: 'like', viewer, count: 50 });
   advance(battle, 9);
-  expect(battle.state.likeBoosts?.red).toBe(4);
+  expect(red.likePower).toBe(2);
   expect(battle.state.boosts.red).toBe(0);
 
-  Object.assign(red, { x: 185, y: 320, cooldown: 0, maxHp: 1000, hp: 1000 });
-  Object.assign(blue, { x: 298, y: 320, cooldown: 0, maxHp: 1000, hp: 1000 });
+  Object.assign(red, { x: 185, y: 320, cooldown: 0, hp: 100 });
+  Object.assign(blue, { x: 298, y: 320, cooldown: 0, hp: 100 });
   battle.update(0.05);
-  expect(red.hp).toBe(988);
-  expect(blue.hp).toBe(976);
+  expect(red.hp).toBe(88);
+  expect(blue.hp).toBe(86);
   expect(battle.state.effects).toContainEqual(
     expect.objectContaining({ type: 'shot', team: 'red', powered: true }),
   );
-  expect(battle.state.likeBoosts?.red).toBeLessThan(4);
-  advance(battle, 6);
-  expect(battle.state.likeBoosts?.red).toBe(0);
+
+  battle.state.phase = 'result';
+  battle.apply({ id: 'intermission-likes', type: 'like', viewer, count: 100 });
+  battle.restart();
+  battle.replaceRoster([{ viewer, team: 'red' }]);
+  battle.apply({ id: 'switch', type: 'chat', viewer, message: 'blue' });
+  expect(battle.state.fighters[0]).toMatchObject({ likePower: 4, team: 'blue' });
+  battle.apply(gift('reinforce'));
+  expect(battle.state.fighters.filter((f) => f.temporary).every((f) => !f.likePower)).toBe(true);
 });
