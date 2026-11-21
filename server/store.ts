@@ -110,9 +110,14 @@ export class Store {
       // A gift without a team binds to the first subsequent selection. Later switches do not redirect it.
       this.db
         .prepare(
-          "UPDATE gifts SET team=? WHERE status='queued' AND team IS NULL AND json_extract(body,'$.viewer.id')=?",
+          "UPDATE gifts SET team=?,result=json_set(result,'$.reason','Waiting for an unpaused battle') WHERE status='queued' AND team IS NULL AND json_extract(body,'$.viewer.id')=?",
         )
         .run(team, event.viewer.id);
+      this.db
+        .prepare(
+          "UPDATE events SET result=(SELECT result FROM gifts WHERE gifts.id=events.id) WHERE id IN (SELECT id FROM gifts WHERE status='queued' AND json_extract(body,'$.viewer.id')=?)",
+        )
+        .run(event.viewer.id);
       const active = battle.state.fighters.some(
         (f) => !f.temporary && f.ownerId === event.viewer.id,
       );

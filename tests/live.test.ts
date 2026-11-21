@@ -412,3 +412,23 @@ test('optional profile metadata cannot discard an otherwise valid gift', () => {
   ).toMatchObject({ accepted: true, status: 'cosmetic' });
   expect(battle.state.fighters).toHaveLength(0);
 });
+
+test('a queued receipt updates its waiting reason when the sender chooses a team during pause', () => {
+  const { battle, store, gift, joinViewer } = setup();
+  battle.state.paused = true;
+  expect(gift()).toMatchObject({
+    status: 'queued',
+    reason: 'Waiting for the viewer to choose red or blue',
+  });
+  joinViewer();
+  expect(gift()).toMatchObject({
+    duplicate: true,
+    status: 'queued',
+    reason: 'Waiting for an unpaused battle',
+  });
+  expect(store.diagnostics().gifts[0].result.reason).toBe('Waiting for an unpaused battle');
+  battle.state.paused = false;
+  store.tick(battle, 0.05);
+  expect(gift()).toMatchObject({ duplicate: true, status: 'applied', details: { spawned: 3 } });
+  expect(battle.state.fighters).toHaveLength(4);
+});
