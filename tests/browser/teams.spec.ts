@@ -203,3 +203,30 @@ test('admin tracks a gift before team selection, delivers after resume and safel
   await expect(page.locator('#action-result')).toContainText('21');
   await expect(page.locator('#pending-count')).toContainText('0 queued');
 });
+
+test('a waiting viewer is promoted when a full arena rotates into the next round', async ({
+  page,
+}) => {
+  const root = `http://127.0.0.1:${test.info().project.name === 'iphone-webkit' ? 8788 : 8787}`;
+  await page.goto(root + '/teams-admin.html');
+  await page.locator('#admin-key').fill('browser-test-admin');
+  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+  await expect(page.locator('#controls')).toBeVisible();
+  const action = async (input: unknown) => {
+    const response = await page.request.post(root + '/api/teams/admin/actions', { data: input });
+    expect(response.ok()).toBe(true);
+  };
+  await action({ type: 'autoplay', enabled: false });
+  await action({ type: 'pause', paused: true });
+  await action({ type: 'restart' });
+  for (let i = 0; i < 4; i++) await action({ type: 'crowd', count: 20 });
+  const viewer = await page.context().newPage();
+  await viewer.setViewportSize({ width: 390, height: 844 });
+  await viewer.goto(root + '/teams.html');
+  await expect(viewer.locator('body')).toHaveAttribute('data-connected', 'true');
+  await viewer.getByRole('button', { name: 'JOIN RED' }).click();
+  await expect(viewer.locator('#join-hint')).toHaveText('REGISTERED · YOUR TURN IS COMING');
+  await action({ type: 'restart' });
+  await expect(viewer.locator('#join-hint')).toHaveText('YOU’RE ON RED');
+  await viewer.close();
+});

@@ -48,9 +48,22 @@ const resize = new ResizeObserver(([entry]) => {
 resize.observe(document.getElementById('team-game')!);
 let activity = 0,
   noticeUntil = 0;
+let ownViewerId: string | undefined;
+let waitingForTeam: Team | undefined;
 client.onState((state) => {
   document.body.dataset.connected = 'true';
   document.body.dataset.phase = state.paused ? 'paused' : state.phase;
+  if (ownViewerId) {
+    const ownFighter = state.fighters.find((f) => !f.temporary && f.ownerId === ownViewerId);
+    if (
+      ownFighter &&
+      (!waitingForTeam || (state.phase === 'battle' && ownFighter.team === waitingForTeam))
+    ) {
+      waitingForTeam = undefined;
+      document.getElementById('join-hint')!.textContent =
+        `YOU’RE ON ${ownFighter.team.toUpperCase()}`;
+    } else document.getElementById('join-hint')!.textContent = 'REGISTERED · YOUR TURN IS COMING';
+  }
   document.getElementById('red-share')!.innerHTML =
     `${Math.round(state.territory * 100)}<span>%</span>`;
   document.getElementById('blue-share')!.innerHTML =
@@ -99,6 +112,8 @@ document.querySelectorAll<HTMLButtonElement>('[data-team]').forEach((button) =>
       if (client instanceof LocalDemo) client.join(button.dataset.team as Team);
       else {
         const result = await post('/api/teams/join', { team: button.dataset.team, name: 'You' });
+        ownViewerId = result.viewerId;
+        waitingForTeam = result.status === 'queued' ? (button.dataset.team as Team) : undefined;
         if (result.status === 'queued') {
           document.getElementById('join-hint')!.textContent = 'REGISTERED · YOUR TURN IS COMING';
           return;

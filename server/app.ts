@@ -330,7 +330,7 @@ export function createBattleServer(options: ServerOptions) {
             viewer: { id: `browser-${id}`, name: name || 'You' },
             team: team.data,
           });
-          respond(res, result.accepted ? 200 : 409, result);
+          respond(res, result.accepted ? 200 : 409, { ...result, viewerId: `browser-${id}` });
           broadcast();
           return;
         }

@@ -66,7 +66,10 @@ export async function post(path: string, body: unknown) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
-  const result = (await response.json()) as Partial<EventResult> & { error?: string };
+  const result = (await response.json()) as Partial<EventResult> & {
+    error?: string;
+    viewerId?: string;
+  };
   if (!response.ok) throw new Error(result.error ?? result.reason ?? 'Action failed');
   return result;
 }
