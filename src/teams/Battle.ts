@@ -243,7 +243,7 @@ export class Battle {
           if (owner.hp > 0) owner.hp += extraHp;
           this.effect({ type: 'boost', team: eventTeam, x: owner.x, y: owner.y });
         }
-        this.announce(event.viewer.name, `unlocked ${upgrade.label}`, eventTeam);
+        this.announce(event.viewer.name, `unlocked ${upgrade.label}`, eventTeam, { kind: 'power' });
       }
       const meters = (this.state.rallyLikes ??= { red: 0, blue: 0 });
       const teamLikes = meters[eventTeam] + event.count;

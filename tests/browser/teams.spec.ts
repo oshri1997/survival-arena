@@ -184,8 +184,8 @@ test('networked team battle fills mobile screen; separate authenticated admin se
   await admin.getByRole('button', { name: 'Join team', exact: true }).click();
   await expect(admin.locator('#roster')).toContainText('Team Explorer');
   await admin.getByRole('button', { name: '50 likes', exact: true }).click();
-  await expect(page.locator('#team-notice')).toContainText('Team Explorer unlocked +2 damage');
-  await expect(other.locator('#team-notice')).toContainText('Team Explorer unlocked +2 damage');
+  await expect(page.locator('#viewer-welcome')).toHaveText('Team Explorer · unlocked +2 damage');
+  await expect(other.locator('#viewer-welcome')).toHaveText('Team Explorer · unlocked +2 damage');
   await expect(page.locator('#red-power')).toBeHidden();
   await expect(page.locator('#blue-power')).toBeHidden();
   await admin.getByRole('button', { name: 'Shield', exact: false }).click();
