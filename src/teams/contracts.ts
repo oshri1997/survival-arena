@@ -18,6 +18,11 @@ const httpsImage = z
 export const viewerSchema = z.object({
   id: z.string().min(1).max(100),
   name: z.string().trim().min(1).max(32),
+  handle: z
+    .string()
+    .max(32)
+    .regex(/^[A-Za-z0-9_.]+$/)
+    .optional(),
   avatar: httpsImage.optional(),
 });
 export type Viewer = z.infer<typeof viewerSchema>;
@@ -36,6 +41,20 @@ export const audienceEventSchema = z.discriminatedUnion('type', [
   envelope.extend({ type: z.literal('join'), team: teamSchema }),
 ]);
 export type AudienceEvent = z.infer<typeof audienceEventSchema>;
+export function selectedTeam(event: AudienceEvent): Team | undefined {
+  if (event.type === 'join') return event.team;
+  if (event.type !== 'chat') return;
+  switch (event.message.trim().toLowerCase()) {
+    case 'red':
+    case '1':
+    case 'אדום':
+      return 'red';
+    case 'blue':
+    case '2':
+    case 'כחול':
+      return 'blue';
+  }
+}
 export const adminActionSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('pause'), paused: z.boolean() }),
   z.object({ type: z.literal('restart') }),
@@ -59,6 +78,7 @@ export interface Fighter {
   maxHp: number;
   level: number;
   likePower?: number;
+  likeTier?: number;
   kills: number;
   cooldown: number;
   respawn: number;
@@ -66,8 +86,8 @@ export interface Fighter {
 }
 export interface BattleEffect {
   id: number;
-  type: 'shot' | 'hit' | 'defeat' | 'shield' | 'meteor' | 'boost' | 'join';
-  team: Team;
+  type: 'shot' | 'hit' | 'defeat' | 'shield' | 'meteor' | 'boost' | 'join' | 'rally' | 'gift';
+  team?: Team;
   x: number;
   y: number;
   targetX?: number;
@@ -80,6 +100,8 @@ export interface BattleActivity {
   name: string;
   text: string;
   team?: Team;
+  kind?: 'gift' | 'welcome' | 'power';
+  gift?: TeamGift;
 }
 export interface BattleState {
   round: number;
@@ -93,6 +115,7 @@ export interface BattleState {
   shields: Record<Team, number>;
   boosts: Record<Team, number>;
   viewerLikes?: Record<string, number>;
+  rallyLikes?: Record<Team, number>;
   liveRoomId?: string;
   fighters: Fighter[];
   effects: BattleEffect[];
@@ -108,14 +131,46 @@ export const WORLD = { width: 480, height: 800 };
 export const MAX_FIGHTERS = 100;
 // Leave room for gift allies. Registered viewers rotate fairly between rounds.
 export const MAX_ACTIVE_VIEWERS = 80;
-export const ROUND_SECONDS = 120;
+export const ROUND_SECONDS = 240;
 export const hasTeamPower = (state: Pick<BattleState, 'boosts'>, team: Team) =>
   state.boosts[team] > 0;
-export const LIKE_MILESTONES = [50, 150, 350] as const;
-export const GIFTS: Record<TeamGift, { name: string; description: string }> = {
-  thanks: { name: 'Thank you', description: 'Cosmetic acknowledgement, no team required' },
-  reinforce: { name: 'Reinforcements', description: 'Deploy 3 allies' },
-  shield: { name: 'Shield', description: 'Protect the team for 6 seconds' },
-  meteor: { name: 'Meteor', description: 'Strike enemies near the front' },
-  boost: { name: 'Power', description: 'Double attack power for 8 seconds' },
+// Cumulative personal stats at each likes milestone. The first entry is the baseline.
+export const LIKE_UPGRADES = [
+  { likes: 0, damage: 0, hp: 0, cooldown: 1, label: 'base stats' },
+  { likes: 50, damage: 2, hp: 0, cooldown: 1, label: '+2 damage' },
+  { likes: 150, damage: 4, hp: 0, cooldown: 1, label: '+4 damage' },
+  { likes: 350, damage: 6, hp: 0, cooldown: 1, label: '+6 damage' },
+  { likes: 600, damage: 6, hp: 10, cooldown: 1, label: '+10 max HP' },
+  { likes: 900, damage: 6, hp: 10, cooldown: 0.93, label: '7% shorter attack cooldown' },
+  { likes: 1250, damage: 7, hp: 10, cooldown: 0.93, label: '+7 damage' },
+  { likes: 1700, damage: 7, hp: 20, cooldown: 0.93, label: '+20 max HP' },
+  { likes: 2300, damage: 7, hp: 20, cooldown: 0.86, label: '14% shorter attack cooldown' },
+] as const;
+export const TEAM_RALLY_LIKES = 200;
+export const GIFTS: Record<TeamGift, { name: string; description: string; image: string }> = {
+  thanks: {
+    name: 'Thank you',
+    description: 'Golden sparks and a shout-out',
+    image: '/assets/spark.png',
+  },
+  reinforce: {
+    name: 'Reinforcements',
+    description: 'Deploy 3 allies',
+    image: '/assets/guardian.png',
+  },
+  shield: {
+    name: 'Shield',
+    description: 'Reduce damage by 75% for 6 seconds',
+    image: '/assets/crystal.png',
+  },
+  meteor: {
+    name: 'Meteor',
+    description: '55 damage to up to 10 enemies',
+    image: '/assets/fireball.png',
+  },
+  boost: {
+    name: 'Power',
+    description: 'Double attack power for 8 seconds',
+    image: '/assets/bolt.png',
+  },
 };

@@ -38,6 +38,7 @@ export function normalizeEuler(type: string, input: unknown): LiveEvent | undefi
   const candidate = basic.user.avatarThumb?.urlList.find(
     (url) => viewerSchema.shape.avatar.safeParse(url).success,
   );
+  const handle = viewerSchema.shape.handle.safeParse(basic.user.displayId.trim());
   const base = {
     id: basic.common.msgId,
     roomId: basic.common.roomId,
@@ -46,6 +47,7 @@ export function normalizeEuler(type: string, input: unknown): LiveEvent | undefi
       name:
         (basic.user.nickname || basic.user.displayId || 'Viewer').trim().slice(0, 32) || 'Viewer',
       ...(candidate ? { avatar: candidate } : {}),
+      ...(handle.success ? { handle: handle.data } : {}),
     },
   };
   if (type === 'WebcastChatMessage')

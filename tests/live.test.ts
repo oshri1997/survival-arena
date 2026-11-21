@@ -117,7 +117,7 @@ describe('durable gift lifecycle and roster', () => {
       details: { secondsAdded: 0 },
     });
   });
-  test('over 100 registered viewers rotate fairly; waiting viewers bank their own likes', () => {
+  test('over 100 registered viewers rotate fairly; waiting viewers count towards the current team goal', () => {
     const { store, battle, joinViewer } = setup();
     for (let i = 0; i < 125; i++)
       expect(joinViewer(`v${i}`, i % 2 ? 'blue' : 'red').accepted).toBe(true);
@@ -132,9 +132,11 @@ describe('durable gift lifecycle and roster', () => {
       }),
     ).toMatchObject({ accepted: true });
     expect(battle.state.fighters.every((f) => !f.likePower)).toBe(true);
+    expect(battle.state.rallyLikes?.red).toBe(101);
     const first = new Set(battle.state.fighters.map((f) => f.ownerId));
     store.restart(battle);
-    expect(battle.state.fighters.find((f) => f.ownerId === 'v124')?.likePower).toBe(2);
+    expect(battle.state.fighters.find((f) => f.ownerId === 'v124')).toBeDefined();
+    expect(battle.state.fighters.find((f) => f.ownerId === 'v124')?.likePower).toBeUndefined();
     const played = new Set([...first, ...battle.state.fighters.map((f) => f.ownerId)]);
     expect(played.size).toBe(125);
     expect(store.diagnostics().roster.reduce((sum, row) => sum + Number(row.count), 0)).toBe(125);

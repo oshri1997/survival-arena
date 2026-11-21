@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { EulerConnector, type ConnectorStatus } from '../server/live/euler';
 import { createBattleServer } from '../server/app';
+import { ROUND_SECONDS } from '../src/teams/contracts';
 
 const cleanup: (() => Promise<unknown> | void)[] = [];
 afterEach(async () => {
@@ -59,7 +60,7 @@ function event(type: string, id: string, extra: Record<string, unknown> = {}, ro
     type,
     data: {
       common: { msgId: id, roomId },
-      user: { id: 'viewer-1', nickname: 'Viewer' },
+      user: { id: 'viewer-1', nickname: 'Viewer', displayId: 'viewer.one' },
       ...extra,
     },
   };
@@ -76,14 +77,37 @@ test('waiting freezes the arena, a reconnect preserves it, and confirmed LIVE en
   });
   const chat = event('WebcastChatMessage', 'chat', { content: 'red' });
   const likes = event('WebcastLikeMessage', 'likes', { count: 149, total: '9999' });
-  expect(await state()).toMatchObject({ live: 'waiting', round: 1, remaining: 120, fighters: [] });
+  expect(await state()).toMatchObject({
+    live: 'waiting',
+    round: 1,
+    remaining: ROUND_SECONDS,
+    fighters: [],
+  });
 
   let connection = once(provider, 'connection');
   connector.start();
   let [socket] = (await connection) as [WebSocket];
-  send(socket, connect('room-1'), chat, likes, likes);
+  send(
+    socket,
+    connect('room-1'),
+    event('WebcastMemberMessage', 'arrived'),
+    chat,
+    likes,
+    likes,
+    event('WebcastChatMessage', 'power-command', { content: '!PoWer' }),
+  );
   await vi.waitFor(() => expect(app.battle.state.fighters[0]?.likePower).toBe(2));
   expect(app.battle.state.viewerLikes?.['viewer:viewer-1']).toBe(149);
+  expect(app.battle.state.activity).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        kind: 'welcome',
+        name: '@viewer.one',
+        text: 'Type RED or BLUE to join',
+      }),
+      expect.objectContaining({ name: '@viewer.one', text: 'Power 1/8 · 1 like to +4 damage' }),
+    ]),
+  );
   expect(await state()).not.toHaveProperty('viewerLikes');
   expect(await state()).not.toHaveProperty('liveRoomId');
 
@@ -93,7 +117,7 @@ test('waiting freezes the arena, a reconnect preserves it, and confirmed LIVE en
   send(socket, connect('room-1'), event('WebcastLikeMessage', 'one-more', { count: 1 }));
   await vi.waitFor(() => expect(app.battle.state.fighters[0]?.likePower).toBe(4));
   expect(await state()).toMatchObject({ live: 'live', fighters: [{ likePower: 4 }] });
-  expect((await state()).remaining).toBeLessThan(120);
+  expect((await state()).remaining).toBeLessThan(ROUND_SECONDS);
 
   app.store.mapGift('flower', 'reinforce');
   const queued = {
@@ -116,7 +140,7 @@ test('waiting freezes the arena, a reconnect preserves it, and confirmed LIVE en
   expect(await state()).toMatchObject({
     live: 'waiting',
     round: 1,
-    remaining: 120,
+    remaining: ROUND_SECONDS,
     territory: 0.5,
     effects: [],
     activity: [],
@@ -143,7 +167,11 @@ test('waiting freezes the arena, a reconnect preserves it, and confirmed LIVE en
   socket.close(4404);
   await closed;
   await vi.waitFor(async () =>
-    expect(await state()).toMatchObject({ live: 'waiting', remaining: 120, fighters: [] }),
+    expect(await state()).toMatchObject({
+      live: 'waiting',
+      remaining: ROUND_SECONDS,
+      fighters: [],
+    }),
   );
 });
 

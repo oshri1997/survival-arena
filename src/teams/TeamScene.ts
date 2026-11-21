@@ -69,12 +69,19 @@ export class TeamScene extends Phaser.Scene {
       if (actor && effect.type === 'hit') actor.impact = 1;
     }
     if (fresh.some((e) => e.type === 'meteor')) this.fxSound.play('nova');
-    else if (fresh.some((e) => e.type === 'boost' || e.type === 'shield'))
+    else if (fresh.some((e) => e.type === 'boost' || e.type === 'shield' || e.type === 'gift'))
       this.fxSound.play('gift');
+    else if (fresh.some((e) => e.type === 'rally')) this.fxSound.play('wave');
     else if (fresh.some((e) => e.type === 'shot')) this.fxSound.play('shot');
     for (const effect of state.effects)
       if (effect.id > this.lastEffect)
-        this.effects.push({ ...effect, life: effect.type === 'meteor' ? 0.8 : 0.35 });
+        this.effects.push({
+          ...effect,
+          life:
+            effect.type === 'meteor' || effect.type === 'rally' || effect.type === 'gift'
+              ? 0.8
+              : 0.35,
+        });
     this.lastEffect = state.sequence;
     this.effects = this.effects.slice(-100);
     const fighterIds = new Set(state.fighters.map((fighter) => fighter.id));
@@ -145,9 +152,9 @@ export class TeamScene extends Phaser.Scene {
       actor.model = fighter;
       actor.label.setText(fighter.name.slice(0, 14));
       const stars = '★'.repeat(fighter.level - 1);
-      actor.level.setText(
-        fighter.likePower ? `${stars}${stars ? ' ' : ''}+${fighter.likePower}` : stars,
-      );
+      const power = fighter.likePower ? `+${fighter.likePower}` : '';
+      const tier = (fighter.likeTier ?? 0) > 3 ? `P${fighter.likeTier}` : '';
+      actor.level.setText([stars, power, tier].filter(Boolean).join(' '));
       actor.ring.setStrokeStyle(fighter.level >= 3 ? 4 : 3, color(fighter.team));
     }
   }
@@ -314,7 +321,7 @@ export class TeamScene extends Phaser.Scene {
       if (e.life <= 0) continue;
       const x = this.mapX(e.x),
         y = this.mapY(e.y),
-        tint = color(e.team),
+        tint = e.team ? color(e.team) : 0xffdb87,
         alpha = Math.min(1, e.life * 4);
       if (e.type === 'shot') {
         const tx = this.mapX(e.targetX!),
@@ -352,6 +359,22 @@ export class TeamScene extends Phaser.Scene {
               y + Math.sin(angle) * radius,
             );
           }
+        }
+      } else if (e.type === 'rally' || e.type === 'gift') {
+        const gift = e.type === 'gift';
+        const progress = 1 - e.life / 0.8;
+        const radius = this.radius + progress * this.radius * (gift ? 3 : 5);
+        const glow = gift ? 0xffdb87 : tint;
+        g.fillStyle(glow, alpha * 0.1);
+        g.fillCircle(x, y, radius);
+        g.lineStyle(3, glow, alpha);
+        g.strokeCircle(x, y, radius);
+        g.lineStyle(1, glow, alpha * 0.7);
+        g.strokeCircle(x, y, radius * 0.78);
+        g.fillStyle(gift ? 0xfff0c1 : 0xb9ffe1, alpha);
+        for (let i = 0; i < 10; i++) {
+          const angle = (i * Math.PI) / 5 + progress * 0.3;
+          g.fillCircle(x + Math.cos(angle) * radius, y + Math.sin(angle) * radius, 2 + (i % 2));
         }
       } else {
         const radius =

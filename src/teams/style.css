@@ -110,6 +110,11 @@ body:not(.team-admin) {
   color: #c3d5ef;
   letter-spacing: 0.3px;
 }
+.score .team-rally {
+  color: #ffd7a1;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
 .score.red > span {
   color: #ffb5bd;
 }
@@ -160,6 +165,52 @@ body:not(.team-admin) {
   background: #ff6c87;
   transition: width 0.25s;
 }
+.gift-guide {
+  position: absolute;
+  z-index: 4;
+  left: max(12px, env(safe-area-inset-left));
+  top: max(126px, 21%);
+  max-width: min(225px, 55%);
+  color: #fff0c1;
+  font-size: clamp(11px, 1.55vw, 17px);
+}
+.gift-guide summary {
+  width: max-content;
+  padding: 7px 10px;
+  background: #151b31e8;
+  border: 1px solid #ffdb876e;
+  border-radius: 12px;
+  cursor: pointer;
+}
+.gift-guide ul {
+  display: grid;
+  gap: 7px;
+  max-height: 52vh;
+  overflow: auto;
+  margin: 5px 0 0;
+  padding: 8px;
+  background: #131a30f5;
+  border: 1px solid #ffdb876e;
+  border-radius: 12px;
+}
+.gift-guide li {
+  display: grid;
+  grid-template-columns: 28px 1fr;
+  align-items: center;
+  gap: 6px;
+}
+.gift-guide img,
+.team-notice.gift img {
+  width: 28px;
+  height: 28px;
+  object-fit: contain;
+}
+.gift-guide small,
+.team-notice.gift small {
+  display: block;
+  color: #e9d8b5;
+  font-size: 0.9em;
+}
 .join-controls {
   position: absolute;
   bottom: max(22px, env(safe-area-inset-bottom));
@@ -178,6 +229,17 @@ body:not(.team-admin) {
   letter-spacing: 2px;
   color: #d6dff1;
   text-shadow: 0 2px 4px #0b1126;
+}
+.join-hint.viewer-welcome {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  padding: 5px 10px;
+  border-radius: 8px;
+  background: #101a30f0;
+  color: #ffffff;
+  letter-spacing: 0.4px;
+  text-align: center;
+  font-size: clamp(11px, 1.8vw, 20px);
 }
 .join-controls > div {
   display: grid;
@@ -256,6 +318,15 @@ body:not(.team-admin) {
 }
 .team-notice.blue {
   border-color: #77cfff77;
+}
+.team-notice.gift {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  background: linear-gradient(115deg, #352033f5, #48321df5);
+  border-color: #ffdb87bf;
+  color: #ffe9ab;
+  box-shadow: 0 0 24px #ffc45c55;
 }
 .team-result {
   position: absolute;

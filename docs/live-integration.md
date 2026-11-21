@@ -51,7 +51,7 @@ Gift counters and like deltas must be integer 1–1,000,000. There is no silent 
 
 SQLite atomically commits the economic receipt, watermark, inbox and resulting game state. A retry returns the current queued/applied/cosmetic result. A conflicting economic payload using the same ID fails. Profile changes are harmless. Failed database transactions do not consume a streak increment. Receipts and watermarks have no automatic count-based eviction; watch volume size, back up and archive deliberately. Earlier versions’ already-rejected receipts retain their historical result and are not retroactively charged again.
 
-Registered players are independent of on-screen avatars. Up to 80 main avatars rotate by least-recently-played round, reserving 40 per team where possible and filling unused places. Waiting viewers bank likes for their own avatar. Follows and configured team gifts still support their registered team. Total rendered fighters remain at most 100 including temporary allies.
+Registered players are independent of on-screen avatars. Up to 80 main avatars rotate by least-recently-played round, reserving 40 per team where possible and filling unused places. Registered viewers’ likes count toward the team heal goal and their personal progress in the current round. Both reset at the next round. Follows and configured team gifts still support their registered team. Total rendered fighters remain at most 100 including temporary allies.
 
 ## Operational visibility and remaining rehearsal
 

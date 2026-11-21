@@ -84,7 +84,9 @@ describe('audited game interaction cases', () => {
     [150, 4],
     [349, 4],
     [350, 6],
-    [1_000_000, 6],
+    [600, 6],
+    [1250, 7],
+    [1_000_000, 7],
   ])('%i likes give +%i personal damage', (count, power) => {
     const b = arena();
     b.apply(like(count));

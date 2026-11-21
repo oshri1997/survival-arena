@@ -5,6 +5,7 @@ import { createHash } from 'node:crypto';
 import {
   audienceEventSchema,
   MAX_ACTIVE_VIEWERS,
+  selectedTeam,
   type BattleState,
   type AudienceEvent,
   type Team,
@@ -92,15 +93,7 @@ export class Store {
     return this.db.prepare('SELECT * FROM roster WHERE id=?').get(id) as Member | undefined;
   }
   private apply(battle: Battle, event: AudienceEvent): EventResult {
-    const keyword = event.type === 'chat' ? event.message.trim().toLowerCase() : '';
-    const team =
-      event.type === 'join'
-        ? event.team
-        : keyword === 'red' || keyword === '1'
-          ? 'red'
-          : keyword === 'blue' || keyword === '2'
-            ? 'blue'
-            : undefined;
+    const team = selectedTeam(event);
     if (team) {
       this.db
         .prepare(
@@ -142,6 +135,7 @@ export class Store {
       return result;
     }
     const member = this.member(event.viewer.id);
+    if (event.type === 'viewerJoined') return battle.apply(event, member?.team);
     if (event.type === 'gift') {
       const target =
         event.team ??
@@ -181,14 +175,18 @@ export class Store {
         );
       return delivered ?? result;
     }
-    if (event.type === 'chat')
-      return {
-        accepted: true,
-        status: 'cosmetic',
-        reason: 'Chat acknowledged; use red or blue to select a team',
-      };
-    if (battle.state.phase !== 'battle' && event.type !== 'like') {
-      this.ack(battle, event.viewer);
+    if (event.type === 'chat') {
+      const result = battle.apply(event, member?.team);
+      return result.accepted
+        ? result
+        : {
+            accepted: true,
+            status: 'cosmetic',
+            reason: 'Chat acknowledged; use red or blue to select a team',
+          };
+    }
+    if (battle.state.phase !== 'battle') {
+      if (event.type !== 'like') this.ack(battle, event.viewer);
       return {
         accepted: true,
         status: 'cosmetic',

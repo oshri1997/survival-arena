@@ -1,7 +1,9 @@
 import { test, expect } from '@playwright/test';
 import { Battle } from '../../src/teams/Battle';
 
-test('the live arena clears its roster and timer when the broadcast ends', async ({ page }) => {
+test('the live arena shows viewer interactions, then clears its roster and timer when the broadcast ends', async ({
+  page,
+}) => {
   const battle = new Battle();
   battle.apply({
     id: 'join',
@@ -13,14 +15,59 @@ test('the live arena clears its roster and timer when the broadcast ends', async
   battle.resetSession();
   const waiting = { ...battle.state, live: 'waiting', connected: true, demoJoin: false };
   let endBroadcast: (() => void) | undefined;
+  let welcomeViewer: (() => void) | undefined;
   await page.routeWebSocket('**/api/teams/socket', (socket) => {
     socket.send(JSON.stringify({ type: 'state', state: active }));
+    welcomeViewer = () =>
+      socket.send(
+        JSON.stringify({
+          type: 'state',
+          state: {
+            ...active,
+            rallyLikes: { red: 50, blue: 0 },
+            activity: [
+              {
+                id: active.sequence + 2,
+                kind: 'welcome',
+                name: '@red.viewer',
+                text: 'Type RED or BLUE to join',
+              },
+              {
+                id: active.sequence + 1,
+                kind: 'gift',
+                name: 'Gift Viewer',
+                text: 'sent meteor',
+                gift: 'meteor',
+              },
+            ],
+          },
+        }),
+      );
     endBroadcast = () => socket.send(JSON.stringify({ type: 'state', state: waiting }));
   });
   await page.goto('/teams.html');
   await expect(page.locator('#team-game canvas')).toBeVisible();
   await expect(page.locator('#red-count')).toHaveText('1 players');
-  await expect(page.locator('#clock')).toHaveText('2:00');
+  await expect(page.locator('#clock')).toHaveText('4:00');
+  welcomeViewer?.();
+  await expect(page.locator('#viewer-welcome')).toHaveText(
+    '@red.viewer · Type RED or BLUE to join',
+  );
+  await expect(page.locator('#red-rally')).toHaveText('♥ 50/200');
+  await expect(page.locator('#team-notice.gift')).toContainText('Gift Viewer sent meteor');
+  await expect(page.locator('#team-notice img')).toHaveAttribute('src', '/assets/fireball.png');
+  await page.locator('.gift-guide summary').click();
+  await expect(page.locator('.gift-guide li')).toHaveCount(5);
+  await expect(page.locator('.gift-guide')).toContainText('Reduce damage by 75% for 6 seconds');
+  await expect
+    .poll(() =>
+      page
+        .locator('.gift-guide img')
+        .evaluateAll((images) =>
+          images.every((image) => (image as HTMLImageElement).naturalWidth > 0),
+        ),
+    )
+    .toBe(true);
   endBroadcast?.();
   await expect(page.locator('#mode')).toHaveText('WAITING FOR LIVE');
   await expect(page.locator('#red-count')).toHaveText('0 players');
