@@ -67,6 +67,7 @@ describe('durable gift lifecycle and roster', () => {
       red.hp = 60;
       downed.hp = 0;
       downed.respawn = 3;
+      const before = structuredClone(battle.state);
       const event = liveGift({ giftId: id, giftName: 'Localized title', streak: false });
       const receipt = store.ingestLive(battle, event, binding);
       expect(receipt).toMatchObject({
@@ -74,7 +75,23 @@ describe('durable gift lifecycle and roster', () => {
         status: action === 'thanks' ? 'cosmetic' : 'applied',
       });
       expect(battle.state.activity[0]).toMatchObject({ gift: action, text: `sent ${name}` });
+      expect(battle.state.effects.at(-1)).toMatchObject({ type: 'gift' });
       expect(store.featuredGiftOverrides()).toEqual({});
+      if (action === 'thanks') {
+        expect(battle.state.fighters).toEqual(before.fighters);
+        expect(battle.state.scores).toEqual(before.scores);
+        expect(battle.state.shields).toEqual(before.shields);
+        expect(battle.state.boosts).toEqual(before.boosts);
+      }
+      if (action === 'frost') expect(battle.state.frost).toEqual({ red: 0, blue: 5 });
+      if (action === 'haste') expect(battle.state.haste).toEqual({ red: 6, blue: 0 });
+      if (action === 'shield') expect(battle.state.shields).toEqual({ red: 6, blue: 0 });
+      if (action === 'boost') expect(battle.state.boosts).toEqual({ red: 8, blue: 0 });
+      if (action === 'reinforce') {
+        const allies = battle.state.fighters.slice(3);
+        expect(allies).toHaveLength(3);
+        expect(allies.every((ally) => ally.team === 'red' && ally.temporary)).toBe(true);
+      }
       if (action === 'heal') expect(red.hp).toBe(80);
       if (action === 'revive') expect(downed.hp).toBe(100);
       if (action === 'bolt') expect(blue.hp).toBe(65);
@@ -84,6 +101,62 @@ describe('durable gift lifecycle and roster', () => {
       expect(battle.state).toEqual(state);
     },
   );
+
+  test.each([
+    ['6247', 'No injured allies to heal'],
+    ['5487', 'No downed allies to revive'],
+    ['6652', 'No living opponents to hit'],
+    ['11046', 'No living opponents to hit'],
+  ])('gift %s reports the outcome when there is no valid target', (giftId, reason) => {
+    const { store, battle, joinViewer } = setup();
+    joinViewer();
+    expect(store.ingestLive(battle, liveGift({ giftId, streak: false }), binding)).toMatchObject({
+      status: 'cosmetic',
+      reason,
+      details: { targets: 0 },
+    });
+    expect(battle.state.activity[0]).toMatchObject({ kind: 'gift', giftDetail: reason });
+    expect(battle.state.fighters[0].hp).toBe(100);
+  });
+
+  test.each([
+    ['6652', 1, 65],
+    ['11046', 10, 45],
+  ] as const)('gift %s damages only the advertised number of enemies', (giftId, targets, hp) => {
+    const { store, battle, joinViewer } = setup();
+    joinViewer();
+    for (let i = 0; i < 12; i++) joinViewer(`enemy-${i}`, 'blue');
+    expect(store.ingestLive(battle, liveGift({ giftId, streak: false }), binding)).toMatchObject({
+      status: 'applied',
+      details: { targets },
+    });
+    expect(
+      battle.state.fighters.filter((fighter) => fighter.team === 'blue' && fighter.hp === hp),
+    ).toHaveLength(targets);
+    expect(battle.state.fighters[0].hp).toBe(100);
+  });
+
+  test('a capped Cap streak displays the time that was actually added', () => {
+    const { store, battle, joinViewer } = setup();
+    joinViewer();
+    const event = liveGift({ giftId: '6104', count: 4 });
+    expect(store.ingestLive(battle, event, binding)).toMatchObject({
+      status: 'applied',
+      details: { secondsAdded: 24 },
+    });
+    expect(battle.state.activity[0].giftDetail).toBe('Power extended by 24s');
+    expect(
+      store.ingestLive(battle, { ...event, id: 'new-count', count: 5 }, binding),
+    ).toMatchObject({
+      status: 'cosmetic',
+      details: { secondsAdded: 0 },
+    });
+    expect(battle.state.activity[0].giftDetail).toBe('Power duration capped at 24 seconds');
+    expect(
+      store.ingestLive(battle, { ...event, id: 'finished', count: 5, streakEnd: true }, binding),
+    ).toMatchObject({ duplicate: true });
+    expect(battle.state.boosts.red).toBe(24);
+  });
 
   test('a saved gift mapping overrides the featured default without changing an earlier delivery', () => {
     const { store, battle, joinViewer } = setup();

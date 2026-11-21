@@ -45,6 +45,7 @@ test('the live arena shows viewer interactions, then clears its roster and timer
                 name: 'Gift Viewer',
                 text: 'sent meteor',
                 gift: 'meteor',
+                giftDetail: 'No living opponents to hit',
               },
             ],
           },
@@ -82,9 +83,11 @@ test('the live arena shows viewer interactions, then clears its roster and timer
   );
   await expect(page.locator('#red-rally')).toHaveText('♥ 50/200');
   await expect(page.locator('#team-notice.gift')).toContainText('Gift Viewer sent meteor');
+  await expect(page.locator('#team-notice.gift')).toContainText('No living opponents to hit');
   await expect(page.locator('#team-notice img')).toHaveAttribute('src', '/assets/fireball.png');
   await expect(guide.locator('[data-live-gift="5659"]')).toContainText('Team heal · 20 HP');
-  await expect(guide.locator('[data-live-gift="11046"]')).toContainText('Meteor · 55 DMG');
+  await expect(guide.locator('[data-live-gift="11046"]')).toContainText('55 DMG · up to 10 foes');
+  await expect(guide.locator('[data-live-gift="6104"]')).toContainText('2× base damage · 8s');
   await expect
     .poll(() =>
       page
@@ -220,7 +223,7 @@ test('networked team battle fills mobile screen; separate authenticated admin se
   await expect(admin.locator('#event-feed')).toContainText('sent reinforce');
   await admin.getByRole('button', { name: 'Meteor', exact: false }).click();
   await expect(page.locator('#team-notice')).toContainText('sent meteor');
-  await admin.getByRole('button', { name: 'Power Double attack', exact: false }).click();
+  await admin.locator('button[data-team-gift="boost"]').click();
   await expect(admin.locator('#event-feed')).toContainText('sent boost');
   await admin.locator('#viewer-name').fill('<img src=x onerror=alert(1)>');
   await admin.locator('#chat').fill('blue');

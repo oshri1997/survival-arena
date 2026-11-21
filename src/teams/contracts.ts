@@ -125,6 +125,7 @@ export interface BattleActivity {
   team?: Team;
   kind?: 'gift' | 'welcome' | 'power';
   gift?: TeamGift;
+  giftDetail?: string;
 }
 export interface BattleState {
   round: number;
@@ -173,6 +174,17 @@ export const LIKE_UPGRADES = [
   { likes: 2300, damage: 7, hp: 20, cooldown: 0.86, label: '14% shorter attack cooldown' },
 ] as const;
 export const TEAM_RALLY_LIKES = 200;
+export const GIFT_RULES = {
+  reinforce: { allies: 3 },
+  shield: { seconds: 6, cap: 18, damageReduction: 0.75 },
+  meteor: { damage: 55, targets: 10 },
+  boost: { seconds: 8, cap: 24, damageMultiplier: 2 },
+  frost: { seconds: 5, cap: 10, fireRate: 0.65 },
+  heal: { hp: 20 },
+  bolt: { damage: 35, targets: 1 },
+  revive: { allies: 1 },
+  haste: { seconds: 6, cap: 12, fireRate: 1.3 },
+} as const;
 export const GIFTS: Record<
   TeamGift,
   { name: string; description: string; short: string; image: string }
@@ -185,56 +197,56 @@ export const GIFTS: Record<
   },
   reinforce: {
     name: 'Reinforcements',
-    description: 'Deploy 3 allies',
-    short: 'Deploy 3 allies',
+    description: `Deploy ${GIFT_RULES.reinforce.allies} temporary allies`,
+    short: `Deploy ${GIFT_RULES.reinforce.allies} allies`,
     image: '/assets/guardian.png',
   },
   shield: {
     name: 'Shield',
-    description: 'Reduce damage by 75% for 6 seconds',
-    short: '75% shield · 6s',
+    description: `Reduce incoming damage by ${GIFT_RULES.shield.damageReduction * 100}% for ${GIFT_RULES.shield.seconds} seconds`,
+    short: `${GIFT_RULES.shield.damageReduction * 100}% shield · ${GIFT_RULES.shield.seconds}s`,
     image: '/assets/crystal.png',
   },
   meteor: {
     name: 'Meteor',
-    description: '55 damage to up to 10 enemies',
-    short: 'Meteor · 55 DMG',
+    description: `${GIFT_RULES.meteor.damage} base damage each to up to ${GIFT_RULES.meteor.targets} enemies`,
+    short: `${GIFT_RULES.meteor.damage} DMG · up to ${GIFT_RULES.meteor.targets} foes`,
     image: '/assets/fireball.png',
   },
   boost: {
     name: 'Power',
-    description: 'Double attack power for 8 seconds',
-    short: 'Double power · 8s',
+    description: `${GIFT_RULES.boost.damageMultiplier}× base attack damage for ${GIFT_RULES.boost.seconds} seconds`,
+    short: `${GIFT_RULES.boost.damageMultiplier}× base damage · ${GIFT_RULES.boost.seconds}s`,
     image: '/assets/bolt.png',
   },
   frost: {
     name: 'Frost',
-    description: 'Slow enemy fire for 5 seconds',
-    short: 'Slow enemy fire · 5s',
+    description: `Slow enemy fire for ${GIFT_RULES.frost.seconds} seconds`,
+    short: `Slow enemy fire · ${GIFT_RULES.frost.seconds}s`,
     image: '/assets/wraith.png',
   },
   heal: {
     name: 'Heal',
-    description: 'Restore 20 HP to living teammates',
-    short: 'Team heal · 20 HP',
+    description: `Restore up to ${GIFT_RULES.heal.hp} HP to each living teammate`,
+    short: `Team heal · ${GIFT_RULES.heal.hp} HP`,
     image: '/assets/torch.png',
   },
   bolt: {
     name: 'Lightning',
-    description: '35 damage to one enemy',
-    short: 'Lightning · 35 DMG',
+    description: `${GIFT_RULES.bolt.damage} base damage to one enemy`,
+    short: `Lightning · ${GIFT_RULES.bolt.damage} DMG`,
     image: '/assets/impact.png',
   },
   revive: {
     name: 'Revive',
-    description: 'Revive 1 downed teammate',
-    short: 'Revive 1 teammate',
+    description: `Revive ${GIFT_RULES.revive.allies} downed main fighter at full health`,
+    short: `Revive ${GIFT_RULES.revive.allies} teammate`,
     image: '/assets/skeleton.png',
   },
   haste: {
     name: 'Haste',
-    description: 'Team fires faster for 6 seconds',
-    short: 'Faster fire · 6s',
+    description: `Team fires faster for ${GIFT_RULES.haste.seconds} seconds`,
+    short: `Faster fire · ${GIFT_RULES.haste.seconds}s`,
     image: '/assets/imp.png',
   },
 };

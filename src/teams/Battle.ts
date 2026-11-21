@@ -1,4 +1,5 @@
 import {
+  GIFT_RULES,
   hasTeamPower,
   LIKE_UPGRADES,
   MAX_FIGHTERS,
@@ -35,16 +36,16 @@ const timedGifts: Partial<
     {
       field: 'shields' | 'boosts' | 'haste' | 'frost';
       label: string;
-      duration: number;
-      limit: number;
+      seconds: number;
+      cap: number;
       effect: BattleEffect['type'];
     }
   >
 > = {
-  shield: { field: 'shields', label: 'Shield', duration: 6, limit: 18, effect: 'shield' },
-  boost: { field: 'boosts', label: 'Power', duration: 8, limit: 24, effect: 'boost' },
-  haste: { field: 'haste', label: 'Haste', duration: 6, limit: 12, effect: 'rally' },
-  frost: { field: 'frost', label: 'Frost', duration: 5, limit: 10, effect: 'frost' },
+  shield: { ...GIFT_RULES.shield, field: 'shields', label: 'Shield', effect: 'shield' },
+  boost: { ...GIFT_RULES.boost, field: 'boosts', label: 'Power', effect: 'boost' },
+  haste: { ...GIFT_RULES.haste, field: 'haste', label: 'Haste', effect: 'rally' },
+  frost: { ...GIFT_RULES.frost, field: 'frost', label: 'Frost', effect: 'frost' },
 };
 const clamp = (value: number, minimum: number, maximum: number) =>
   Math.max(minimum, Math.min(maximum, value));
@@ -93,7 +94,7 @@ export class Battle {
     name: string,
     text: string,
     team?: Team,
-    meta?: Pick<BattleActivity, 'kind' | 'gift'>,
+    meta?: Pick<BattleActivity, 'kind' | 'gift' | 'giftDetail'>,
   ) {
     this.state.activity.unshift({ id: ++this.state.sequence, name, text, team, ...meta });
     this.state.activity = this.state.activity.slice(0, 20);
@@ -130,14 +131,23 @@ export class Battle {
     this.announce(viewer.name, text, team);
     if (team) this.effect({ type: 'boost', team, x: team === 'red' ? 90 : 390, y: 400 });
   }
-  private thankGift(event: Extract<AudienceEvent, { type: 'gift' }>, owner?: Fighter, team?: Team) {
+  private thankGift(
+    event: Extract<AudienceEvent, { type: 'gift' }>,
+    owner?: Fighter,
+    team?: Team,
+    giftDetail?: string,
+  ) {
     const count = event.amount > 1 ? ` ×${event.amount}` : '';
     const text = event.giftName
       ? `sent ${event.giftName}`
       : event.gift === 'thanks'
         ? 'thank you'
         : `sent ${event.gift}`;
-    this.announce(event.viewer.name, text + count, team, { kind: 'gift', gift: event.gift });
+    this.announce(event.viewer.name, text + count, team, {
+      kind: 'gift',
+      gift: event.gift,
+      giftDetail,
+    });
     const position = owner && owner.hp > 0 ? owner : { x: WORLD.width / 2, y: 400 };
     this.effect({ type: 'gift', team, x: position.x, y: position.y });
   }
@@ -262,11 +272,15 @@ export class Battle {
     if (event.type === 'gift') {
       const details: NonNullable<EventResult['details']> = { requested: event.amount };
       let reason: string | undefined;
+      let giftDetail: string | undefined;
       if (event.gift === 'reinforce') {
-        const count = Math.min(3 * event.amount, MAX_FIGHTERS - this.state.fighters.length);
+        const requested = GIFT_RULES.reinforce.allies * event.amount;
+        const count = Math.min(requested, MAX_FIGHTERS - this.state.fighters.length);
         details.spawned = count;
-        if (count < 3 * event.amount)
-          reason = 'Ally capacity reached; overflow acknowledged cosmetically';
+        if (count < requested) {
+          reason = 'Ally capacity reached';
+          giftDetail = count ? `Deployed ${count} allies` : reason;
+        }
         for (let i = 0; i < count; i++) {
           const ally = this.create(event.viewer, eventTeam, true);
           this.state.fighters.push(ally);
@@ -278,56 +292,67 @@ export class Battle {
         const team = event.gift === 'frost' ? opposite(eventTeam) : eventTeam;
         const timers = (this.state[timed.field] ??= { red: 0, blue: 0 });
         const before = timers[team];
-        const seconds = timed.duration * event.amount;
-        timers[team] = Math.min(timed.limit, before + seconds);
+        const seconds = timed.seconds * event.amount;
+        timers[team] = Math.min(timed.cap, before + seconds);
         details.secondsAdded = timers[team] - before;
         if (details.secondsAdded < seconds)
-          reason = `${timed.label} duration capped at ${timed.limit} seconds; overflow acknowledged`;
+          reason = `${timed.label} duration capped at ${timed.cap} seconds`;
+        if (details.secondsAdded > 0 && (reason || event.amount > 1))
+          giftDetail = `${timed.label} extended by ${Number(details.secondsAdded.toFixed(2))}s`;
         const x = event.gift === 'frost' ? (team === 'red' ? 120 : 360) : WORLD.width / 2;
-        this.effect({ type: timed.effect, team, x, y: 400 });
+        if (details.secondsAdded > 0) this.effect({ type: timed.effect, team, x, y: 400 });
       }
       if (event.gift === 'heal') {
-        details.targets = this.healTeam(eventTeam, 20 * event.amount);
-        if (!details.targets) reason = 'No injured allies; gift acknowledged cosmetically';
-        this.effect({ type: 'rally', team: eventTeam, x: eventTeam === 'red' ? 120 : 360, y: 400 });
+        details.targets = this.healTeam(eventTeam, GIFT_RULES.heal.hp * event.amount);
+        if (details.targets)
+          this.effect({
+            type: 'rally',
+            team: eventTeam,
+            x: eventTeam === 'red' ? 120 : 360,
+            y: 400,
+          });
+        else reason = 'No injured allies to heal';
       }
       if (event.gift === 'revive') {
         const allies = this.state.fighters
           .filter((f) => f.team === eventTeam && f.hp <= 0 && !f.temporary)
-          .slice(0, event.amount);
+          .slice(0, GIFT_RULES.revive.allies * event.amount);
         details.targets = allies.length;
-        if (!allies.length) reason = 'No downed allies; gift acknowledged cosmetically';
+        if (!allies.length) reason = 'No downed allies to revive';
         for (const ally of allies) this.respawn(ally);
       }
       if (event.gift === 'meteor' || event.gift === 'bolt') {
         const meteor = event.gift === 'meteor';
+        const attack = GIFT_RULES[event.gift];
         const center = this.state.territory * WORLD.width;
         if (meteor) this.effect({ type: 'meteor', team: eventTeam, x: center, y: 390 });
         const enemies = this.state.fighters
           .filter((f) => f.team !== eventTeam && f.hp > 0)
           .sort((a, b) => Math.abs(a.x - center) - Math.abs(b.x - center))
-          .slice(0, meteor ? 10 : 1);
+          .slice(0, attack.targets);
         details.targets = enemies.length;
-        if (!enemies.length) reason = 'No living opponents; gift acknowledged cosmetically';
+        if (!enemies.length) reason = 'No living opponents to hit';
         for (const enemy of enemies) {
           if (!meteor) this.effect({ type: 'bolt', team: eventTeam, x: enemy.x, y: enemy.y });
           this.damage(
             enemy,
-            (meteor ? 55 : 35) * event.amount,
+            attack.damage * event.amount,
             owner?.team === eventTeam ? owner : undefined,
           );
         }
         this.patrol.constrain(this.state.fighters, this.state.territory, this.state.round);
       }
-      this.thankGift(event, owner, eventTeam);
       const cosmetic = details.spawned === 0 || details.secondsAdded === 0 || details.targets === 0;
+      this.thankGift(event, owner, eventTeam, giftDetail ?? (cosmetic ? reason : undefined));
       return { accepted: true, status: cosmetic ? 'cosmetic' : 'applied', details, reason };
     }
     return { accepted: true };
   }
   private damage(target: Fighter, amount: number, attacker?: Fighter) {
     if (target.hp <= 0) return;
-    target.hp = Math.max(0, target.hp - amount * (this.state.shields[target.team] > 0 ? 0.25 : 1));
+    const damageMultiplier =
+      this.state.shields[target.team] > 0 ? 1 - GIFT_RULES.shield.damageReduction : 1;
+    target.hp = Math.max(0, target.hp - amount * damageMultiplier);
     this.effect({ type: 'hit', team: target.team, x: target.x, y: target.y, fighterId: target.id });
     if (target.hp > 0) return;
     target.respawn = 3;
@@ -423,8 +448,8 @@ export class Battle {
           distance = d;
         }
       }
-      const haste = (s.haste?.[f.team] ?? 0) > 0 ? 1.3 : 1;
-      const frost = (s.frost?.[f.team] ?? 0) > 0 ? 0.65 : 1;
+      const haste = (s.haste?.[f.team] ?? 0) > 0 ? GIFT_RULES.haste.fireRate : 1;
+      const frost = (s.frost?.[f.team] ?? 0) > 0 ? GIFT_RULES.frost.fireRate : 1;
       f.cooldown = Math.max(0, f.cooldown - dt * haste * frost);
       if (target && distance < attackRange && f.cooldown === 0) {
         f.cooldown = (smallBattle ? 0.52 : 0.65) * (LIKE_UPGRADES[f.likeTier ?? 0]?.cooldown ?? 1);
@@ -443,7 +468,7 @@ export class Battle {
         });
         attacks.push({
           target,
-          amount: (10 + f.level * 2) * (giftPower ? 2 : 1) + bonus,
+          amount: (10 + f.level * 2) * (giftPower ? GIFT_RULES.boost.damageMultiplier : 1) + bonus,
           attacker: f,
         });
       }

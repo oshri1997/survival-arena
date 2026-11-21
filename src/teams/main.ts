@@ -180,7 +180,7 @@ client.onState((state) => {
     const line = document.createElement('span');
     line.append(strong, document.createTextNode(` ${latest.text}`));
     const description = document.createElement('small');
-    description.textContent = effect.description;
+    description.textContent = latest.giftDetail ?? effect.description;
     line.append(description);
     notice.append(icon, line);
   } else notice.append(strong, document.createTextNode(` ${latest.text}`));
