@@ -4,6 +4,7 @@ import { Battle } from '../../src/teams/Battle';
 test('the live arena shows viewer interactions, then clears its roster and timer when the broadcast ends', async ({
   page,
 }) => {
+  await page.setViewportSize({ width: 320, height: 568 });
   const battle = new Battle();
   battle.apply({
     id: 'join',
@@ -24,6 +25,7 @@ test('the live arena shows viewer interactions, then clears its roster and timer
           type: 'state',
           state: {
             ...active,
+            giftOverrides: { '5659': 'heal' },
             rallyLikes: { red: 50, blue: 0 },
             activity: [
               {
@@ -49,6 +51,13 @@ test('the live arena shows viewer interactions, then clears its roster and timer
   await expect(page.locator('#team-game canvas')).toBeVisible();
   await expect(page.locator('#red-count')).toHaveText('1 players');
   await expect(page.locator('#clock')).toHaveText('4:00');
+  const guide = page.locator('.gift-guide');
+  await expect(guide.locator('li')).toHaveCount(10);
+  await expect(guide.locator('[data-live-gift="5659"]')).toContainText('75% shield · 6s');
+  await expect(guide.locator('li').last()).toBeInViewport({ ratio: 1 });
+  expect(await guide.locator('ul').evaluate((list) => list.scrollHeight)).toBeLessThanOrEqual(
+    await guide.locator('ul').evaluate((list) => list.clientHeight),
+  );
   welcomeViewer?.();
   await expect(page.locator('#viewer-welcome')).toHaveText(
     '@red.viewer · Type RED or BLUE to join',
@@ -56,9 +65,8 @@ test('the live arena shows viewer interactions, then clears its roster and timer
   await expect(page.locator('#red-rally')).toHaveText('♥ 50/200');
   await expect(page.locator('#team-notice.gift')).toContainText('Gift Viewer sent meteor');
   await expect(page.locator('#team-notice img')).toHaveAttribute('src', '/assets/fireball.png');
-  await page.locator('.gift-guide summary').click();
-  await expect(page.locator('.gift-guide li')).toHaveCount(5);
-  await expect(page.locator('.gift-guide')).toContainText('Reduce damage by 75% for 6 seconds');
+  await expect(guide.locator('[data-live-gift="5659"]')).toContainText('Team heal · 20 HP');
+  await expect(guide.locator('[data-live-gift="11046"]')).toContainText('Meteor · 55 DMG');
   await expect
     .poll(() =>
       page
@@ -68,6 +76,10 @@ test('the live arena shows viewer interactions, then clears its roster and timer
         ),
     )
     .toBe(true);
+  await guide.locator('summary').click();
+  await expect(guide.locator('ul')).toBeHidden();
+  await guide.locator('summary').click();
+  await expect(guide.locator('li').last()).toBeVisible();
   endBroadcast?.();
   await expect(page.locator('#mode')).toHaveText('WAITING FOR LIVE');
   await expect(page.locator('#red-count')).toHaveText('0 players');

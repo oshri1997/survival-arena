@@ -169,14 +169,14 @@ body:not(.team-admin) {
   position: absolute;
   z-index: 4;
   left: max(12px, env(safe-area-inset-left));
-  top: max(126px, 21%);
-  max-width: min(225px, 55%);
+  top: max(118px, 19%);
+  width: clamp(123px, 19vw, 225px);
   color: #fff0c1;
-  font-size: clamp(11px, 1.55vw, 17px);
+  font-size: clamp(10px, 1.3vw, 16px);
 }
 .gift-guide summary {
   width: max-content;
-  padding: 7px 10px;
+  padding: 5px 8px;
   background: #151b31e8;
   border: 1px solid #ffdb876e;
   border-radius: 12px;
@@ -184,22 +184,34 @@ body:not(.team-admin) {
 }
 .gift-guide ul {
   display: grid;
-  gap: 7px;
-  max-height: 52vh;
+  gap: 3px;
+  max-height: 58dvh;
   overflow: auto;
-  margin: 5px 0 0;
-  padding: 8px;
-  background: #131a30f5;
+  overscroll-behavior: contain;
+  margin: 4px 0 0;
+  padding: 5px;
+  background: #131a30df;
   border: 1px solid #ffdb876e;
   border-radius: 12px;
 }
 .gift-guide li {
   display: grid;
-  grid-template-columns: 28px 1fr;
+  grid-template-columns: clamp(20px, 3.1vw, 34px) minmax(0, 1fr);
   align-items: center;
-  gap: 6px;
+  min-height: 24px;
+  gap: 4px;
 }
-.gift-guide img,
+.gift-card-icon {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 1;
+  font-size: 1.35em;
+}
+.gift-card-icon img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
 .team-notice.gift img {
   width: 28px;
   height: 28px;
@@ -210,6 +222,15 @@ body:not(.team-admin) {
   display: block;
   color: #e9d8b5;
   font-size: 0.9em;
+}
+@media (orientation: landscape) and (max-height: 610px) {
+  .gift-guide {
+    top: 101px;
+    width: clamp(230px, 31vw, 310px);
+  }
+  .gift-guide ul {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 .join-controls {
   position: absolute;

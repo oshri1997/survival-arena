@@ -198,3 +198,19 @@ test('an arrival is addressed on screen until they have chosen a team', () => {
   battle.apply({ id: 'return', type: 'viewerJoined', viewer: guest });
   expect(battle.state.activity.filter((item) => item.kind === 'welcome')).toHaveLength(1);
 });
+
+test('haste and frost affect only their intended sides and reset between rounds', () => {
+  const battle = joined();
+  const [red, blue] = battle.state.fighters;
+  red.cooldown = blue.cooldown = 1;
+  battle.apply({ id: 'haste', type: 'gift', gift: 'haste', viewer, amount: 50 });
+  battle.apply({ id: 'frost', type: 'gift', gift: 'frost', viewer, amount: 50 });
+  expect(battle.state.haste).toEqual({ red: 12, blue: 0 });
+  expect(battle.state.frost).toEqual({ red: 0, blue: 10 });
+  battle.update(0.1);
+  expect(red.cooldown).toBeCloseTo(0.87);
+  expect(blue.cooldown).toBeCloseTo(0.935);
+  battle.restart();
+  expect(battle.state.haste).toBeUndefined();
+  expect(battle.state.frost).toBeUndefined();
+});

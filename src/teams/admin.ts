@@ -1,6 +1,7 @@
 import { TeamClient, post } from './Client';
 import type { EventResult } from './Battle';
 import { ConfirmedToggle } from './ConfirmedToggle';
+import { FEATURED_GIFTS } from './FeaturedGifts';
 import { GIFTS, type AdminAction, type Team, type TeamGift } from './contracts';
 import './style.css';
 
@@ -14,7 +15,7 @@ document.getElementById('app')!.innerHTML =
     )
     .join(
       '',
-    )}</div><form id="chat-form" class="chat-form"><input id="chat" placeholder="red, blue, 1 or 2" aria-label="Viewer chat" maxlength="200"><button>Send chat</button></form></section><p id="action-result" role="status"></p><section class="control-card"><h2>LIVE connection</h2><p id="live-status">Disabled · simulation only</p><p id="registered-count"></p><h2>Gift delivery</h2><p id="pending-count"></p><ol id="gift-receipts" class="event-feed"></ol></section><section class="control-card"><h2>Gift catalog</h2><p>New gift IDs default to a cosmetic thank you. Choose an explicit effect for each ID.</p><form id="gift-mapping" class="viewer-fields"><label>Gift ID<input id="catalog-id" required maxlength="160" list="catalog-list"><datalist id="catalog-list"></datalist></label><label>Effect<select id="catalog-action">${Object.entries(
+    )}</div><form id="chat-form" class="chat-form"><input id="chat" placeholder="red, blue, 1 or 2" aria-label="Viewer chat" maxlength="200"><button>Send chat</button></form></section><p id="action-result" role="status"></p><section class="control-card"><h2>LIVE connection</h2><p id="live-status">Disabled · simulation only</p><p id="registered-count"></p><h2>Gift delivery</h2><p id="pending-count"></p><ol id="gift-receipts" class="event-feed"></ol></section><section class="control-card"><h2>Gift catalog</h2><p>The ten featured TikTok gifts have default effects. Other IDs default to a cosmetic thank you.</p><form id="gift-mapping" class="viewer-fields"><label>Gift ID<input id="catalog-id" required maxlength="160" list="catalog-list"><datalist id="catalog-list"></datalist></label><label>Effect<select id="catalog-action">${Object.entries(
     GIFTS,
   )
     .map(([id, gift]) => `<option value="${id}">${gift.name}</option>`)
@@ -243,17 +244,22 @@ async function diagnostics() {
         return row;
       }),
     );
+    const catalog = new Map<string, Diagnostics['catalog'][number]>(
+      FEATURED_GIFTS.map(({ id, name, action }) => [id, { id, name, action }]),
+    );
+    for (const gift of data.catalog) catalog.set(gift.id, gift);
+    const catalogRows = [...catalog.values()];
     el('catalog-list').replaceChildren(
-      ...data.catalog.map((gift) => {
+      ...catalogRows.map((gift) => {
         const option = document.createElement('option');
         option.value = gift.id;
         option.label = `${gift.name} → ${gift.action}`;
         return option;
       }),
     );
-    el('catalog-summary').textContent =
-      data.catalog.map((gift) => `${gift.name} (${gift.id}) → ${gift.action}`).join(' · ') ||
-      'Gift IDs appear here when received from the provider.';
+    el('catalog-summary').textContent = catalogRows
+      .map((gift) => `${gift.name} (${gift.id}) → ${gift.action}`)
+      .join(' · ');
   } catch {
     /* The connection indicator already reports server availability. */
   }

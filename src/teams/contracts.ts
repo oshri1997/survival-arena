@@ -2,7 +2,18 @@ import { z } from 'zod';
 
 export const teamSchema = z.enum(['red', 'blue']);
 export type Team = z.infer<typeof teamSchema>;
-export const giftSchema = z.enum(['reinforce', 'shield', 'meteor', 'boost', 'thanks']);
+export const giftSchema = z.enum([
+  'reinforce',
+  'shield',
+  'meteor',
+  'boost',
+  'thanks',
+  'frost',
+  'heal',
+  'bolt',
+  'revive',
+  'haste',
+]);
 export type TeamGift = z.infer<typeof giftSchema>;
 const httpsImage = z
   .string()
@@ -34,6 +45,7 @@ export const audienceEventSchema = z.discriminatedUnion('type', [
   envelope.extend({
     type: z.literal('gift'),
     gift: giftSchema,
+    giftName: z.string().trim().min(1).max(100).optional(),
     amount: z.number().int().min(1).max(1_000_000).default(1),
     team: teamSchema.optional(),
   }),
@@ -86,7 +98,18 @@ export interface Fighter {
 }
 export interface BattleEffect {
   id: number;
-  type: 'shot' | 'hit' | 'defeat' | 'shield' | 'meteor' | 'boost' | 'join' | 'rally' | 'gift';
+  type:
+    | 'shot'
+    | 'hit'
+    | 'defeat'
+    | 'shield'
+    | 'meteor'
+    | 'boost'
+    | 'join'
+    | 'rally'
+    | 'gift'
+    | 'frost'
+    | 'bolt';
   team?: Team;
   x: number;
   y: number;
@@ -114,6 +137,8 @@ export interface BattleState {
   scores: Record<Team, number>;
   shields: Record<Team, number>;
   boosts: Record<Team, number>;
+  haste?: Record<Team, number>;
+  frost?: Record<Team, number>;
   viewerLikes?: Record<string, number>;
   rallyLikes?: Record<Team, number>;
   liveRoomId?: string;
@@ -126,6 +151,7 @@ export interface BattleSnapshot extends Omit<BattleState, 'viewerLikes' | 'liveR
   connected: true;
   demoJoin: boolean;
   live?: 'waiting' | 'live';
+  giftOverrides?: Record<string, TeamGift>;
 }
 export const WORLD = { width: 480, height: 800 };
 export const MAX_FIGHTERS = 100;
@@ -147,30 +173,68 @@ export const LIKE_UPGRADES = [
   { likes: 2300, damage: 7, hp: 20, cooldown: 0.86, label: '14% shorter attack cooldown' },
 ] as const;
 export const TEAM_RALLY_LIKES = 200;
-export const GIFTS: Record<TeamGift, { name: string; description: string; image: string }> = {
+export const GIFTS: Record<
+  TeamGift,
+  { name: string; description: string; short: string; image: string }
+> = {
   thanks: {
     name: 'Thank you',
     description: 'Golden sparks and a shout-out',
+    short: 'Golden shout-out',
     image: '/assets/spark.png',
   },
   reinforce: {
     name: 'Reinforcements',
     description: 'Deploy 3 allies',
+    short: 'Deploy 3 allies',
     image: '/assets/guardian.png',
   },
   shield: {
     name: 'Shield',
     description: 'Reduce damage by 75% for 6 seconds',
+    short: '75% shield · 6s',
     image: '/assets/crystal.png',
   },
   meteor: {
     name: 'Meteor',
     description: '55 damage to up to 10 enemies',
+    short: 'Meteor · 55 DMG',
     image: '/assets/fireball.png',
   },
   boost: {
     name: 'Power',
     description: 'Double attack power for 8 seconds',
+    short: 'Double power · 8s',
     image: '/assets/bolt.png',
+  },
+  frost: {
+    name: 'Frost',
+    description: 'Slow enemy fire for 5 seconds',
+    short: 'Slow enemy fire · 5s',
+    image: '/assets/wraith.png',
+  },
+  heal: {
+    name: 'Heal',
+    description: 'Restore 20 HP to living teammates',
+    short: 'Team heal · 20 HP',
+    image: '/assets/torch.png',
+  },
+  bolt: {
+    name: 'Lightning',
+    description: '35 damage to one enemy',
+    short: 'Lightning · 35 DMG',
+    image: '/assets/impact.png',
+  },
+  revive: {
+    name: 'Revive',
+    description: 'Revive 1 downed teammate',
+    short: 'Revive 1 teammate',
+    image: '/assets/skeleton.png',
+  },
+  haste: {
+    name: 'Haste',
+    description: 'Team fires faster for 6 seconds',
+    short: 'Faster fire · 6s',
+    image: '/assets/imp.png',
   },
 };

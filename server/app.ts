@@ -91,6 +91,7 @@ export function createBattleServer(options: ServerOptions) {
   const demoJoin = options.demoJoin ?? true;
   const waitingState = options.liveCollector ? new Battle().state : undefined;
   let liveBinding = options.liveBinding;
+  let giftOverrides = store.featuredGiftOverrides();
   let clearedOffline = false;
   let liveStatus: Record<string, unknown> = { state: 'disabled' };
   const accept = (event: AudienceEvent) => store.ingest(battle, event);
@@ -119,6 +120,7 @@ export function createBattleServer(options: ServerOptions) {
       sequence: battle.state.sequence,
       connected: true,
       demoJoin: demoJoin && !waiting,
+      giftOverrides,
       ...(options.liveCollector ? { live: waiting ? 'waiting' : 'live' } : {}),
     };
   };
@@ -289,7 +291,9 @@ export function createBattleServer(options: ServerOptions) {
             return;
           }
           store.mapGift(parsed.data.giftId, parsed.data.action);
+          giftOverrides = store.featuredGiftOverrides();
           respond(res, 200, { ok: true });
+          broadcast();
           return;
         }
         if (path === '/api/teams/admin/actions') {

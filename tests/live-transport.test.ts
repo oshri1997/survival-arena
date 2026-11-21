@@ -66,6 +66,18 @@ function event(type: string, id: string, extra: Record<string, unknown> = {}, ro
   };
 }
 
+test('a featured gift remap updates the public guide through the protected admin route', async () => {
+  const { post, url } = await setup();
+  const state = async () => (await fetch(url + 'state')).json();
+  const mapping = { giftId: '5659', action: 'heal' };
+  expect(await state()).toMatchObject({ giftOverrides: {} });
+  expect((await post('admin/gift-mapping', mapping)).status).toBe(401);
+  const login = await post('admin/login', { key: 'admin' });
+  const Cookie = login.headers.get('set-cookie')!.split(';')[0];
+  expect((await post('admin/gift-mapping', mapping, { Cookie })).status).toBe(200);
+  expect(await state()).toMatchObject({ giftOverrides: { '5659': 'heal' } });
+});
+
 test('waiting freezes the arena, a reconnect preserves it, and confirmed LIVE end resets it', async () => {
   const { app, provider, connector, post, url, statuses } = await setup();
   const state = async () => (await fetch(url + 'state')).json();

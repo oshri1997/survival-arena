@@ -1,19 +1,43 @@
 import Phaser from 'phaser';
 import { TeamClient, post } from './Client';
 import { LocalDemo } from './LocalDemo';
-import { GIFTS, hasTeamPower, ROUND_SECONDS, TEAM_RALLY_LIKES, type Team } from './contracts';
+import { FEATURED_GIFTS } from './FeaturedGifts';
+import {
+  GIFTS,
+  hasTeamPower,
+  ROUND_SECONDS,
+  TEAM_RALLY_LIKES,
+  type BattleSnapshot,
+  type Team,
+} from './contracts';
 import { TeamScene } from './TeamScene';
 import './style.css';
 import { Sound } from '../audio/Sound';
 
-const giftGuide = Object.values(GIFTS)
-  .map(
-    (gift) =>
-      `<li><img src="${gift.image}" alt="" loading="lazy"><span><b>${gift.name}</b><small>${gift.description}</small></span></li>`,
-  )
-  .join('');
 document.getElementById('app')!.innerHTML =
-  `<main class="battle-screen"><div id="team-game" role="img" aria-label="Red and blue viewer avatars battle for territory"></div><header class="team-scoreboard"><div class="score red"><span>RED <i class="team-power" id="red-power" hidden>POWER ×2</i></span><b id="red-share">50<span>%</span></b><small id="red-count">0 players</small><small class="team-rally" id="red-rally" hidden></small></div><div class="round-info"><span id="mode">DEMO</span><b id="clock">${Math.floor(ROUND_SECONDS / 60)}:00</b><small id="round">ROUND 1</small></div><div class="score blue"><span>BLUE <i class="team-power" id="blue-power" hidden>POWER ×2</i></span><b id="blue-share">50<span>%</span></b><small id="blue-count">0 players</small><small class="team-rally" id="blue-rally" hidden></small></div><div class="territory-track"><i id="territory-red"></i></div></header><details class="gift-guide"><summary>Gift effects</summary><ul>${giftGuide}</ul></details><div id="team-result" class="team-result" hidden><span>ROUND COMPLETE</span><strong id="winner"></strong><small id="next-round"></small></div><div id="team-notice" class="team-notice" role="status">Connecting to the arena…</div><footer class="join-controls"><span class="join-hint" id="join-hint">CHOOSE YOUR SIDE</span><span class="join-hint viewer-welcome" id="viewer-welcome" role="status" hidden></span><div><button data-team="red" class="join-red">JOIN RED <span>1</span></button><button data-team="blue" class="join-blue">JOIN BLUE <span>2</span></button></div><small>Chat <b>red</b> or <b>blue</b> to join · <b>!power</b> for your next upgrade</small></footer></main>`;
+  `<main class="battle-screen"><div id="team-game" role="img" aria-label="Red and blue viewer avatars battle for territory"></div><header class="team-scoreboard"><div class="score red"><span>RED <i class="team-power" id="red-power" hidden>POWER ×2</i></span><b id="red-share">50<span>%</span></b><small id="red-count">0 players</small><small class="team-rally" id="red-rally" hidden></small></div><div class="round-info"><span id="mode">DEMO</span><b id="clock">${Math.floor(ROUND_SECONDS / 60)}:00</b><small id="round">ROUND 1</small></div><div class="score blue"><span>BLUE <i class="team-power" id="blue-power" hidden>POWER ×2</i></span><b id="blue-share">50<span>%</span></b><small id="blue-count">0 players</small><small class="team-rally" id="blue-rally" hidden></small></div><div class="territory-track"><i id="territory-red"></i></div></header><details class="gift-guide" open><summary>Gift effects</summary><ul id="gift-guide-items"></ul></details><div id="team-result" class="team-result" hidden><span>ROUND COMPLETE</span><strong id="winner"></strong><small id="next-round"></small></div><div id="team-notice" class="team-notice" role="status">Connecting to the arena…</div><footer class="join-controls"><span class="join-hint" id="join-hint">CHOOSE YOUR SIDE</span><span class="join-hint viewer-welcome" id="viewer-welcome" role="status" hidden></span><div><button data-team="red" class="join-red">JOIN RED <span>1</span></button><button data-team="blue" class="join-blue">JOIN BLUE <span>2</span></button></div><small>Chat <b>red</b> or <b>blue</b> to join · <b>!power</b> for your next upgrade</small></footer></main>`;
+const giftGuide = document.getElementById('gift-guide-items')!;
+let displayedGiftOverrides = '';
+function renderGiftGuide(overrides: BattleSnapshot['giftOverrides'] = {}) {
+  const key = JSON.stringify(overrides);
+  if (key === displayedGiftOverrides) return;
+  displayedGiftOverrides = key;
+  giftGuide.innerHTML = FEATURED_GIFTS.map((gift) => {
+    const effect = GIFTS[overrides[gift.id]] ?? GIFTS[gift.action];
+    return `<li data-live-gift="${gift.id}" title="${effect.description}"><span class="gift-card-icon" aria-hidden="true"><img src="/assets/gifts/${gift.id}.webp" alt=""><span hidden>${gift.symbol}</span></span><span><b>${gift.name}</b><small aria-label="${effect.description}">${effect.short}</small></span></li>`;
+  }).join('');
+  giftGuide.querySelectorAll('img').forEach((img) => {
+    img.addEventListener(
+      'error',
+      () => {
+        img.hidden = true;
+        (img.nextElementSibling as HTMLElement).hidden = false;
+      },
+      { once: true },
+    );
+  });
+}
+renderGiftGuide();
 const localDemo = document.body.dataset.demo === 'local';
 const client = localDemo ? new LocalDemo() : new TeamClient();
 const sound = new Sound();
@@ -67,6 +91,7 @@ const clearWelcome = () => {
 };
 client.onState((state) => {
   const waiting = state.live === 'waiting';
+  renderGiftGuide(state.giftOverrides);
   document.body.dataset.connected = 'true';
   document.body.dataset.phase = state.paused ? 'paused' : state.phase;
   if (ownViewerId) {
@@ -153,7 +178,7 @@ client.onState((state) => {
     const line = document.createElement('span');
     line.append(strong, document.createTextNode(` ${latest.text}`));
     const description = document.createElement('small');
-    description.textContent = effect.name;
+    description.textContent = effect.description;
     line.append(description);
     notice.append(icon, line);
   } else notice.append(strong, document.createTextNode(` ${latest.text}`));

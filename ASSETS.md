@@ -35,3 +35,5 @@ The LIVE redesign brightens the floor, increases character scale, gives enemies 
 ## Team Arena assets
 
 `src/teams/avatars.ts` draws original illustrated human, cat and owl profile avatars using the Canvas API. `src/teams/TeamScene.ts` draws the original hex field and combat effects. These original drawings are also dedicated under CC0 1.0; no images from the supplied TikTok screenshot are reused. Optional future provider profile images remain external content and are not covered by this dedication.
+
+`public/assets/gifts/*.webp` contains ten original AI-generated illustrations created for the gift guide, packaged as individual transparent 96 × 96 icons. The file names use TikTok gift IDs verified against the [Euler Stream catalog](https://www.eulerstream.com/docs/tiktok-gifts-list).

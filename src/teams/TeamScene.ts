@@ -69,6 +69,8 @@ export class TeamScene extends Phaser.Scene {
       if (actor && effect.type === 'hit') actor.impact = 1;
     }
     if (fresh.some((e) => e.type === 'meteor')) this.fxSound.play('nova');
+    else if (fresh.some((e) => e.type === 'bolt')) this.fxSound.play('lightning');
+    else if (fresh.some((e) => e.type === 'frost')) this.fxSound.play('frost');
     else if (fresh.some((e) => e.type === 'boost' || e.type === 'shield' || e.type === 'gift'))
       this.fxSound.play('gift');
     else if (fresh.some((e) => e.type === 'rally')) this.fxSound.play('wave');
@@ -78,7 +80,10 @@ export class TeamScene extends Phaser.Scene {
         this.effects.push({
           ...effect,
           life:
-            effect.type === 'meteor' || effect.type === 'rally' || effect.type === 'gift'
+            effect.type === 'meteor' ||
+            effect.type === 'rally' ||
+            effect.type === 'gift' ||
+            effect.type === 'frost'
               ? 0.8
               : 0.35,
         });
@@ -256,6 +261,10 @@ export class TeamScene extends Phaser.Scene {
         h.lineStyle(2, 0xc8faff, 0.65);
         h.strokeCircle(x, y, radius + 5);
       }
+      if ((state.frost?.[f.team] ?? 0) > 0) {
+        h.lineStyle(2, 0x8adeff, 0.85);
+        h.strokeCircle(x, y, radius + 7);
+      }
       actor.ring.setStrokeStyle(f.level >= 3 ? 4 : 3, color(f.team));
       if (state.phase === 'battle' && (f.likePower || hasTeamPower(state, f.team))) {
         h.lineStyle(3, 0xffe38b, 0.95);
@@ -360,18 +369,30 @@ export class TeamScene extends Phaser.Scene {
             );
           }
         }
-      } else if (e.type === 'rally' || e.type === 'gift') {
+      } else if (e.type === 'bolt') {
+        g.lineStyle(7, 0x759cff, alpha * 0.45);
+        g.lineBetween(x - 9, y - 68, x, y);
+        g.lineStyle(3, 0xf6f2ff, alpha);
+        g.beginPath();
+        g.moveTo(x + 12, y - 82);
+        g.lineTo(x - 10, y - 53);
+        g.lineTo(x + 7, y - 48);
+        g.lineTo(x - 5, y - 20);
+        g.lineTo(x, y);
+        g.strokePath();
+      } else if (e.type === 'rally' || e.type === 'gift' || e.type === 'frost') {
         const gift = e.type === 'gift';
+        const frost = e.type === 'frost';
         const progress = 1 - e.life / 0.8;
         const radius = this.radius + progress * this.radius * (gift ? 3 : 5);
-        const glow = gift ? 0xffdb87 : tint;
+        const glow = gift ? 0xffdb87 : frost ? 0x89dfff : tint;
         g.fillStyle(glow, alpha * 0.1);
         g.fillCircle(x, y, radius);
         g.lineStyle(3, glow, alpha);
         g.strokeCircle(x, y, radius);
         g.lineStyle(1, glow, alpha * 0.7);
         g.strokeCircle(x, y, radius * 0.78);
-        g.fillStyle(gift ? 0xfff0c1 : 0xb9ffe1, alpha);
+        g.fillStyle(gift ? 0xfff0c1 : frost ? 0xe4f9ff : 0xb9ffe1, alpha);
         for (let i = 0; i < 10; i++) {
           const angle = (i * Math.PI) / 5 + progress * 0.3;
           g.fillCircle(x + Math.cos(angle) * radius, y + Math.sin(angle) * radius, 2 + (i % 2));

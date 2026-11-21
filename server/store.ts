@@ -13,6 +13,7 @@ import {
   type Viewer,
 } from '../src/teams/contracts';
 import type { Battle, EventResult } from '../src/teams/Battle';
+import { FEATURED_GIFTS } from '../src/teams/FeaturedGifts';
 import { liveEventSchema, type LiveEvent, type LiveBinding } from './live/contracts';
 
 type Receipt = EventResult & { duplicate: boolean };
@@ -328,11 +329,25 @@ export class Store {
     };
   }
   mapGift(id: string, action: TeamGift) {
+    const name = FEATURED_GIFTS.find((gift) => gift.id === id)?.name ?? id;
     this.db
       .prepare(
         'INSERT INTO gift_catalog(id,name,action) VALUES (?,?,?) ON CONFLICT(id) DO UPDATE SET action=excluded.action',
       )
-      .run(id, id, action);
+      .run(id, name, action);
+  }
+  featuredGiftOverrides(): Record<string, TeamGift> {
+    const ids = FEATURED_GIFTS.map((gift) => gift.id);
+    const rows = this.db
+      .prepare(`SELECT id,action FROM gift_catalog WHERE id IN (${ids.map(() => '?').join(',')})`)
+      .all(...ids) as { id: string; action: TeamGift }[];
+    const saved = new Map(rows.map(({ id, action }) => [id, action]));
+    const overrides: Record<string, TeamGift> = {};
+    for (const gift of FEATURED_GIFTS) {
+      const action = saved.get(gift.id);
+      if (action && action !== gift.action) overrides[gift.id] = action;
+    }
+    return overrides;
   }
   ingestLive(battle: Battle, input: LiveEvent, binding: LiveBinding): Receipt {
     const event = liveEventSchema.parse(input);
@@ -358,11 +373,12 @@ export class Store {
         const { roomId: _room, ...action } = event;
         return this.ingestInside(battle, { ...action, id: `live:${hash([...scope, event.id])}` });
       }
+      const featured = FEATURED_GIFTS.find((gift) => gift.id === event.giftId);
       this.db
         .prepare(
-          'INSERT INTO gift_catalog(id,name) VALUES (?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name',
+          'INSERT INTO gift_catalog(id,name,action) VALUES (?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name',
         )
-        .run(event.giftId, event.giftName);
+        .run(event.giftId, event.giftName, featured?.action ?? 'thanks');
       const mapping = this.db
         .prepare('SELECT action FROM gift_catalog WHERE id=?')
         .get(event.giftId) as { action: TeamGift };
@@ -402,6 +418,7 @@ export class Store {
           type: 'gift',
           viewer: event.viewer,
           gift: mapping.action,
+          giftName: featured?.name,
           amount: count,
         },
         hash({

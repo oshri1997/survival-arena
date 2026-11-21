@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Battle } from '../src/teams/Battle';
+import { FEATURED_GIFTS } from '../src/teams/FeaturedGifts';
 import { MAX_ACTIVE_VIEWERS, type AudienceEvent } from '../src/teams/contracts';
 import { Store } from '../server/store';
 import { DatabaseSync } from 'node:sqlite';
@@ -55,6 +56,51 @@ function setup(path = ':memory:') {
 }
 
 describe('durable gift lifecycle and roster', () => {
+  test.each(FEATURED_GIFTS)(
+    '$name selects $action by its stable gift ID',
+    ({ id, name, action }) => {
+      const { store, battle, joinViewer } = setup();
+      joinViewer();
+      joinViewer('downed', 'red');
+      joinViewer('enemy', 'blue');
+      const [red, downed, blue] = battle.state.fighters;
+      red.hp = 60;
+      downed.hp = 0;
+      downed.respawn = 3;
+      const event = liveGift({ giftId: id, giftName: 'Localized title', streak: false });
+      const receipt = store.ingestLive(battle, event, binding);
+      expect(receipt).toMatchObject({
+        accepted: true,
+        status: action === 'thanks' ? 'cosmetic' : 'applied',
+      });
+      expect(battle.state.activity[0]).toMatchObject({ gift: action, text: `sent ${name}` });
+      expect(store.featuredGiftOverrides()).toEqual({});
+      if (action === 'heal') expect(red.hp).toBe(80);
+      if (action === 'revive') expect(downed.hp).toBe(100);
+      if (action === 'bolt') expect(blue.hp).toBe(65);
+      if (action === 'meteor') expect(blue.hp).toBe(45);
+      const state = structuredClone(battle.state);
+      expect(store.ingestLive(battle, event, binding)).toMatchObject({ duplicate: true });
+      expect(battle.state).toEqual(state);
+    },
+  );
+
+  test('a saved gift mapping overrides the featured default without changing an earlier delivery', () => {
+    const { store, battle, joinViewer } = setup();
+    joinViewer();
+    const gift = liveGift({ giftId: '5659', giftName: 'Paper Crane', streak: false });
+    expect(store.ingestLive(battle, gift, binding)).toMatchObject({ details: { secondsAdded: 6 } });
+    store.mapGift(gift.giftId, 'heal');
+    expect(store.featuredGiftOverrides()).toEqual({ [gift.giftId]: 'heal' });
+    battle.state.fighters[0].hp = 60;
+    expect(store.ingestLive(battle, gift, binding)).toMatchObject({ duplicate: true });
+    expect(battle.state.fighters[0].hp).toBe(60);
+    expect(store.ingestLive(battle, { ...gift, id: 'later-crane' }, binding)).toMatchObject({
+      details: { targets: 1 },
+    });
+    expect(battle.state.fighters[0].hp).toBe(80);
+  });
+
   test('a gift before team choice survives DB reopen, binds once and is never replayed', () => {
     const dir = mkdtempSync(join(tmpdir(), 'gift-inbox-'));
     cleanups.push(() => rmSync(dir, { recursive: true, force: true }));

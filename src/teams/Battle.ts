@@ -14,6 +14,7 @@ import type {
   BattleState,
   Fighter,
   Team,
+  TeamGift,
   Viewer,
 } from './contracts';
 import { Patrol } from './Patrol';
@@ -28,6 +29,23 @@ export interface EventResult {
 const opposite = (team: Team): Team => (team === 'red' ? 'blue' : 'red');
 const SMALL_BATTLE_SIZE = 6;
 const SMALL_BATTLE_RANGE = 215;
+const timedGifts: Partial<
+  Record<
+    TeamGift,
+    {
+      field: 'shields' | 'boosts' | 'haste' | 'frost';
+      label: string;
+      duration: number;
+      limit: number;
+      effect: BattleEffect['type'];
+    }
+  >
+> = {
+  shield: { field: 'shields', label: 'Shield', duration: 6, limit: 18, effect: 'shield' },
+  boost: { field: 'boosts', label: 'Power', duration: 8, limit: 24, effect: 'boost' },
+  haste: { field: 'haste', label: 'Haste', duration: 6, limit: 12, effect: 'rally' },
+  frost: { field: 'frost', label: 'Frost', duration: 5, limit: 10, effect: 'frost' },
+};
 const clamp = (value: number, minimum: number, maximum: number) =>
   Math.max(minimum, Math.min(maximum, value));
 const likeTier = (likes: number) =>
@@ -114,15 +132,31 @@ export class Battle {
   }
   private thankGift(event: Extract<AudienceEvent, { type: 'gift' }>, owner?: Fighter, team?: Team) {
     const count = event.amount > 1 ? ` ×${event.amount}` : '';
-    const text = event.gift === 'thanks' ? 'thank you' : `sent ${event.gift}`;
+    const text = event.giftName
+      ? `sent ${event.giftName}`
+      : event.gift === 'thanks'
+        ? 'thank you'
+        : `sent ${event.gift}`;
     this.announce(event.viewer.name, text + count, team, { kind: 'gift', gift: event.gift });
     const position = owner && owner.hp > 0 ? owner : { x: WORLD.width / 2, y: 400 };
     this.effect({ type: 'gift', team, x: position.x, y: position.y });
   }
   private healTeam(team: Team, hp: number) {
-    for (const fighter of this.state.fighters)
-      if (fighter.team === team && fighter.hp > 0)
+    let healed = 0;
+    for (const fighter of this.state.fighters) {
+      if (fighter.team === team && fighter.hp > 0 && fighter.hp < fighter.maxHp) {
         fighter.hp = Math.min(fighter.maxHp, fighter.hp + hp);
+        healed++;
+      }
+    }
+    return healed;
+  }
+  private respawn(fighter: Fighter) {
+    Object.assign(fighter, this.position(fighter.team));
+    fighter.hp = fighter.maxHp;
+    fighter.respawn = fighter.vx = fighter.vy = 0;
+    this.patrol.reset(fighter.id);
+    this.effect({ type: 'join', team: fighter.team, x: fighter.x, y: fighter.y });
   }
   replaceRoster(viewers: { viewer: Viewer; team: Team }[]) {
     this.state.fighters = viewers.map(({ viewer, team }) => this.create(viewer, team));
@@ -239,39 +273,50 @@ export class Battle {
           this.effect({ type: 'join', team: eventTeam, x: ally.x, y: ally.y });
         }
       }
-      if (event.gift === 'shield') {
-        const before = this.state.shields[eventTeam];
-        this.state.shields[eventTeam] = Math.min(
-          18,
-          this.state.shields[eventTeam] + 6 * event.amount,
-        );
-        details.secondsAdded = this.state.shields[eventTeam] - before;
-        if (details.secondsAdded < 6 * event.amount)
-          reason = 'Shield duration capped at 18 seconds; overflow acknowledged';
-        this.effect({ type: 'shield', team: eventTeam, x: 240, y: 400 });
+      const timed = timedGifts[event.gift];
+      if (timed) {
+        const team = event.gift === 'frost' ? opposite(eventTeam) : eventTeam;
+        const timers = (this.state[timed.field] ??= { red: 0, blue: 0 });
+        const before = timers[team];
+        const seconds = timed.duration * event.amount;
+        timers[team] = Math.min(timed.limit, before + seconds);
+        details.secondsAdded = timers[team] - before;
+        if (details.secondsAdded < seconds)
+          reason = `${timed.label} duration capped at ${timed.limit} seconds; overflow acknowledged`;
+        const x = event.gift === 'frost' ? (team === 'red' ? 120 : 360) : WORLD.width / 2;
+        this.effect({ type: timed.effect, team, x, y: 400 });
       }
-      if (event.gift === 'boost') {
-        const before = this.state.boosts[eventTeam];
-        this.state.boosts[eventTeam] = Math.min(
-          24,
-          this.state.boosts[eventTeam] + 8 * event.amount,
-        );
-        details.secondsAdded = this.state.boosts[eventTeam] - before;
-        if (details.secondsAdded < 8 * event.amount)
-          reason = 'Power duration capped at 24 seconds; overflow acknowledged';
-        this.effect({ type: 'boost', team: eventTeam, x: 240, y: 400 });
+      if (event.gift === 'heal') {
+        details.targets = this.healTeam(eventTeam, 20 * event.amount);
+        if (!details.targets) reason = 'No injured allies; gift acknowledged cosmetically';
+        this.effect({ type: 'rally', team: eventTeam, x: eventTeam === 'red' ? 120 : 360, y: 400 });
       }
-      if (event.gift === 'meteor') {
+      if (event.gift === 'revive') {
+        const allies = this.state.fighters
+          .filter((f) => f.team === eventTeam && f.hp <= 0 && !f.temporary)
+          .slice(0, event.amount);
+        details.targets = allies.length;
+        if (!allies.length) reason = 'No downed allies; gift acknowledged cosmetically';
+        for (const ally of allies) this.respawn(ally);
+      }
+      if (event.gift === 'meteor' || event.gift === 'bolt') {
+        const meteor = event.gift === 'meteor';
         const center = this.state.territory * WORLD.width;
-        this.effect({ type: 'meteor', team: eventTeam, x: center, y: 390 });
+        if (meteor) this.effect({ type: 'meteor', team: eventTeam, x: center, y: 390 });
         const enemies = this.state.fighters
           .filter((f) => f.team !== eventTeam && f.hp > 0)
           .sort((a, b) => Math.abs(a.x - center) - Math.abs(b.x - center))
-          .slice(0, 10);
+          .slice(0, meteor ? 10 : 1);
         details.targets = enemies.length;
         if (!enemies.length) reason = 'No living opponents; gift acknowledged cosmetically';
-        for (const enemy of enemies)
-          this.damage(enemy, 55 * event.amount, owner?.team === eventTeam ? owner : undefined);
+        for (const enemy of enemies) {
+          if (!meteor) this.effect({ type: 'bolt', team: eventTeam, x: enemy.x, y: enemy.y });
+          this.damage(
+            enemy,
+            (meteor ? 55 : 35) * event.amount,
+            owner?.team === eventTeam ? owner : undefined,
+          );
+        }
         this.patrol.constrain(this.state.fighters, this.state.territory, this.state.round);
       }
       this.thankGift(event, owner, eventTeam);
@@ -312,6 +357,8 @@ export class Battle {
     s.scores = { red: 0, blue: 0 };
     s.shields = { red: 0, blue: 0 };
     s.boosts = { red: 0, blue: 0 };
+    s.haste = undefined;
+    s.frost = undefined;
     s.viewerLikes = undefined;
     s.rallyLikes = undefined;
     s.fighters = s.fighters.filter((f) => !f.temporary);
@@ -341,6 +388,8 @@ export class Battle {
     for (const team of ['red', 'blue'] as const) {
       s.shields[team] = Math.max(0, s.shields[team] - dt);
       s.boosts[team] = Math.max(0, s.boosts[team] - dt);
+      if (s.haste) s.haste[team] = Math.max(0, s.haste[team] - dt);
+      if (s.frost) s.frost[team] = Math.max(0, s.frost[team] - dt);
     }
     const respawned = new Set<string>();
     for (const f of [...s.fighters]) {
@@ -349,12 +398,8 @@ export class Battle {
         if (f.respawn <= 0) {
           if (f.temporary) s.fighters = s.fighters.filter((ally) => ally.id !== f.id);
           else {
-            Object.assign(f, this.position(f.team));
-            f.hp = f.maxHp;
-            f.vx = f.vy = 0;
-            this.patrol.reset(f.id);
+            this.respawn(f);
             respawned.add(f.id);
-            this.effect({ type: 'join', team: f.team, x: f.x, y: f.y });
           }
         }
       }
@@ -378,7 +423,9 @@ export class Battle {
           distance = d;
         }
       }
-      f.cooldown = Math.max(0, f.cooldown - dt);
+      const haste = (s.haste?.[f.team] ?? 0) > 0 ? 1.3 : 1;
+      const frost = (s.frost?.[f.team] ?? 0) > 0 ? 0.65 : 1;
+      f.cooldown = Math.max(0, f.cooldown - dt * haste * frost);
       if (target && distance < attackRange && f.cooldown === 0) {
         f.cooldown = (smallBattle ? 0.52 : 0.65) * (LIKE_UPGRADES[f.likeTier ?? 0]?.cooldown ?? 1);
         const giftPower = hasTeamPower(s, f.team);
