@@ -1,13 +1,13 @@
 import Phaser from 'phaser';
 import { TeamClient, post } from './Client';
 import { LocalDemo } from './LocalDemo';
-import type { Team } from './contracts';
+import { hasTeamPower, type Team } from './contracts';
 import { TeamScene } from './TeamScene';
 import './style.css';
 import { Sound } from '../audio/Sound';
 
 document.getElementById('app')!.innerHTML =
-  `<main class="battle-screen"><div id="team-game" role="img" aria-label="Red and blue viewer avatars battle for territory"></div><header class="team-scoreboard"><div class="score red"><span>RED</span><b id="red-share">50<span>%</span></b><small id="red-count">0 players</small></div><div class="round-info"><span id="mode">DEMO</span><b id="clock">2:00</b><small id="round">ROUND 1</small></div><div class="score blue"><span>BLUE</span><b id="blue-share">50<span>%</span></b><small id="blue-count">0 players</small></div><div class="territory-track"><i id="territory-red"></i></div></header><div id="team-result" class="team-result" hidden><span>ROUND COMPLETE</span><strong id="winner"></strong><small id="next-round"></small></div><div id="team-notice" class="team-notice" role="status">Connecting to the arena…</div><footer class="join-controls"><span class="join-hint" id="join-hint">CHOOSE YOUR SIDE</span><div><button data-team="red" class="join-red">JOIN RED <span>1</span></button><button data-team="blue" class="join-blue">JOIN BLUE <span>2</span></button></div><small>Chat <b>red</b> or <b>blue</b> to join your team</small></footer></main>`;
+  `<main class="battle-screen"><div id="team-game" role="img" aria-label="Red and blue viewer avatars battle for territory"></div><header class="team-scoreboard"><div class="score red"><span>RED <i class="team-power" id="red-power" hidden>POWER ×2</i></span><b id="red-share">50<span>%</span></b><small id="red-count">0 players</small></div><div class="round-info"><span id="mode">DEMO</span><b id="clock">2:00</b><small id="round">ROUND 1</small></div><div class="score blue"><span>BLUE <i class="team-power" id="blue-power" hidden>POWER ×2</i></span><b id="blue-share">50<span>%</span></b><small id="blue-count">0 players</small></div><div class="territory-track"><i id="territory-red"></i></div></header><div id="team-result" class="team-result" hidden><span>ROUND COMPLETE</span><strong id="winner"></strong><small id="next-round"></small></div><div id="team-notice" class="team-notice" role="status">Connecting to the arena…</div><footer class="join-controls"><span class="join-hint" id="join-hint">CHOOSE YOUR SIDE</span><div><button data-team="red" class="join-red">JOIN RED <span>1</span></button><button data-team="blue" class="join-blue">JOIN BLUE <span>2</span></button></div><small>Chat <b>red</b> or <b>blue</b> to join your team</small></footer></main>`;
 const localDemo = document.body.dataset.demo === 'local';
 const client = localDemo ? new LocalDemo() : new TeamClient();
 const sound = new Sound();
@@ -68,9 +68,12 @@ client.onState((state) => {
     `${Math.round(state.territory * 100)}<span>%</span>`;
   document.getElementById('blue-share')!.innerHTML =
     `${100 - Math.round(state.territory * 100)}<span>%</span>`;
-  for (const team of ['red', 'blue'] as const)
+  for (const team of ['red', 'blue'] as const) {
     document.getElementById(`${team}-count`)!.textContent =
       `${state.fighters.filter((f) => f.team === team && !f.temporary).length} players`;
+    document.getElementById(`${team}-power`)!.hidden =
+      state.phase !== 'battle' || !hasTeamPower(state, team);
+  }
   document.getElementById('territory-red')!.style.width = `${state.territory * 100}%`;
   document.getElementById('clock')!.textContent = state.paused
     ? 'Ⅱ'

@@ -96,6 +96,10 @@ test('networked team battle fills mobile screen; separate authenticated admin se
   await admin.locator('#viewer-name').fill('Team Explorer');
   await admin.getByRole('button', { name: 'Join team', exact: true }).click();
   await expect(admin.locator('#roster')).toContainText('Team Explorer');
+  await admin.getByRole('button', { name: '20 likes', exact: true }).click();
+  await expect(page.locator('#red-power')).toBeVisible();
+  await expect(other.locator('#red-power')).toBeVisible();
+  await expect(page.locator('#blue-power')).toBeHidden();
   await admin.getByRole('button', { name: 'Shield', exact: false }).click();
   await expect(admin.locator('#action-result')).toContainText('QUEUED');
   await expect(admin.locator('#pending-count')).toContainText('1 queued');

@@ -42,13 +42,19 @@ export class Patrol {
     }
   }
 
-  update(fighters: Fighter[], dt: number, territory: number, round: number) {
+  update(
+    fighters: Fighter[],
+    dt: number,
+    territory: number,
+    round: number,
+    engagementRange?: number,
+  ) {
     this.constrain(fighters, territory, round);
     const living = fighters.filter((f) => f.hp > 0);
     const ids = new Set(living.map((f) => f.id));
     for (const id of this.routes.keys()) if (!ids.has(id)) this.routes.delete(id);
     // Read a single position snapshot so avoidance is independent of roster iteration order.
-    const positions = living.map((f) => ({ id: f.id, x: f.x, y: f.y }));
+    const positions = living.map(({ id, team, x, y }) => ({ id, team, x, y }));
     for (const f of living) {
       let route = this.routes.get(f.id);
       if (!route || route.team !== f.team) {
@@ -60,10 +66,32 @@ export class Patrol {
         route = this.destination(f, territory, round, route.speed);
       Object.assign(route, confine(route, f.team, territory, round));
       this.routes.set(f.id, route);
-      const dx = route.x - f.x,
-        dy = route.y - f.y,
+      let targetX = route.x;
+      let targetY = route.y;
+      if (engagementRange) {
+        let enemy: (typeof positions)[number] | undefined;
+        let gap = Infinity;
+        for (const other of positions) {
+          if (other.team === f.team) continue;
+          const distance = Math.hypot(other.x - f.x, other.y - f.y);
+          if (distance < gap) {
+            gap = distance;
+            enemy = other;
+          }
+        }
+        if (enemy) {
+          // Approach from inside the team's territory and blend back into patrol as the gap closes.
+          const approach = confine(enemy, f.team, territory, round, FIELD.padding + 18);
+          const weight = clamp((gap / engagementRange - 0.72) / 0.28, 0, 1);
+          targetX += (approach.x - targetX) * weight;
+          targetY += (approach.y - targetY) * weight;
+        }
+      }
+      const dx = targetX - f.x,
+        dy = targetY - f.y,
         distance = Math.hypot(dx, dy);
-      const speed = route.speed * Math.min(1, distance / 30);
+      const cruisingSpeed = route.speed * (engagementRange ? 1.4 : 1);
+      const speed = cruisingSpeed * Math.min(1, distance / 30);
       let desiredX = (dx / Math.max(1, distance)) * speed;
       let desiredY = (dy / Math.max(1, distance)) * speed;
       for (const other of positions) {
@@ -87,7 +115,7 @@ export class Patrol {
         desiredY += (sy / separation) * pressure;
       }
       const magnitude = Math.hypot(desiredX, desiredY),
-        limit = route.speed * 1.2;
+        limit = cruisingSpeed * 1.2;
       if (magnitude > limit) {
         desiredX *= limit / magnitude;
         desiredY *= limit / magnitude;
@@ -97,7 +125,7 @@ export class Patrol {
         changeY = desiredY - (f.vy ?? 0);
       const blend = Math.min(
         1 - Math.exp(-dt * 4),
-        (100 * dt) / Math.max(0.001, Math.hypot(changeX, changeY)),
+        ((engagementRange ? 125 : 100) * dt) / Math.max(0.001, Math.hypot(changeX, changeY)),
       );
       f.vx = (f.vx ?? 0) + changeX * blend;
       f.vy = (f.vy ?? 0) + changeY * blend;

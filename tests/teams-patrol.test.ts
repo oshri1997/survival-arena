@@ -120,3 +120,29 @@ test('coincident allies separate without NaNs and ordinary roaming still produce
   }
   expect(kills).toBeGreaterThan(3);
 });
+
+test.each([2, 4, 6])(
+  'a small battle with %i fighters closes long gaps without crossing the frontier',
+  (count) => {
+    const battle = crowd(count);
+    for (const f of battle.state.fighters) {
+      f.y = f.team === 'red' ? FIELD.top : FIELD.bottom;
+      const range = territoryRange(f.team, f.y, battle.state.territory, battle.state.round);
+      f.x = f.team === 'red' ? range.min : range.max;
+    }
+    const red = battle.state.fighters[0];
+    let maxSpeed = 0;
+    let firstShotBy = Infinity;
+    for (let i = 0; i < 150; i++) {
+      battle.update(0.05);
+      for (const f of battle.state.fighters) inside(f, battle.state.territory, battle.state.round);
+      maxSpeed = Math.max(maxSpeed, Math.hypot(red.vx ?? 0, red.vy ?? 0));
+      if (battle.state.effects.some((e) => e.type === 'shot')) {
+        firstShotBy = (i + 1) * 0.05;
+        break;
+      }
+    }
+    expect(maxSpeed).toBeGreaterThan(42);
+    expect(firstShotBy).toBeLessThan(7.5);
+  },
+);

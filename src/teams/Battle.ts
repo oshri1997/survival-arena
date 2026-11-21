@@ -1,4 +1,4 @@
-import { MAX_FIGHTERS, ROUND_SECONDS, WORLD } from './contracts';
+import { hasTeamPower, MAX_FIGHTERS, ROUND_SECONDS, WORLD } from './contracts';
 import type { AudienceEvent, BattleEffect, BattleState, Fighter, Team, Viewer } from './contracts';
 import { Patrol } from './Patrol';
 import { FIELD, territoryRange } from './territory';
@@ -10,6 +10,8 @@ export interface EventResult {
   details?: { requested: number; spawned?: number; secondsAdded?: number; targets?: number };
 }
 const opposite = (team: Team): Team => (team === 'red' ? 'blue' : 'red');
+const SMALL_BATTLE_SIZE = 6;
+const SMALL_BATTLE_RANGE = 215;
 const clamp = (value: number, minimum: number, maximum: number) =>
   Math.max(minimum, Math.min(maximum, value));
 
@@ -144,10 +146,8 @@ export class Battle {
       if (this.state.likes[eventTeam] >= 20) {
         const charges = Math.floor(this.state.likes[eventTeam] / 20);
         this.state.likes[eventTeam] %= 20;
-        this.state.boosts[eventTeam] = Math.max(
-          this.state.boosts[eventTeam],
-          Math.min(16, this.state.boosts[eventTeam] + 4 * charges),
-        );
+        const power = (this.state.likeBoosts ??= { red: 0, blue: 0 });
+        power[eventTeam] = Math.min(16, power[eventTeam] + 4 * charges);
         this.effect({ type: 'boost', team: eventTeam, x: eventTeam === 'red' ? 90 : 390, y: 400 });
         this.announce(event.viewer.name, 'charged team power', eventTeam);
       }
@@ -243,6 +243,7 @@ export class Battle {
     s.scores = { red: 0, blue: 0 };
     s.shields = { red: 0, blue: 0 };
     s.boosts = { red: 0, blue: 0 };
+    s.likeBoosts = { red: 0, blue: 0 };
     s.likes = { red: 0, blue: 0 };
     s.fighters = s.fighters.filter((f) => !f.temporary);
     s.effects = [];
@@ -287,8 +288,14 @@ export class Battle {
         }
       }
     }
-    this.patrol.update(s.fighters, dt, s.territory, s.round);
+    const smallBattle =
+      s.fighters.length <= SMALL_BATTLE_SIZE &&
+      s.fighters.some((fighter) => fighter.team === 'red') &&
+      s.fighters.some((fighter) => fighter.team === 'blue');
+    const attackRange = smallBattle ? SMALL_BATTLE_RANGE : 180;
+    this.patrol.update(s.fighters, dt, s.territory, s.round, smallBattle ? attackRange : undefined);
     const attacks: { target: Fighter; amount: number; attacker: Fighter }[] = [];
+    const engaged = new Set<Team>();
     for (const f of s.fighters) {
       if (f.hp <= 0 || respawned.has(f.id)) continue;
       let target: Fighter | undefined,
@@ -302,9 +309,11 @@ export class Battle {
         }
       }
       f.cooldown = Math.max(0, f.cooldown - dt);
-      if (target && distance < 180) {
+      if (target && distance < attackRange) {
+        engaged.add(f.team);
         if (f.cooldown === 0) {
-          f.cooldown = 0.65;
+          f.cooldown = smallBattle ? 0.52 : 0.65;
+          const powered = hasTeamPower(s, f.team);
           this.effect({
             type: 'shot',
             team: f.team,
@@ -313,10 +322,11 @@ export class Battle {
             targetX: target.x,
             targetY: target.y,
             fighterId: f.id,
+            ...(powered ? { powered } : {}),
           });
           attacks.push({
             target,
-            amount: (10 + f.level * 2) * (s.boosts[f.team] > 0 ? 2 : 1),
+            amount: (10 + f.level * 2) * (powered ? 2 : 1),
             attacker: f,
           });
         }
@@ -324,6 +334,9 @@ export class Battle {
     }
     // Resolve after everyone chooses an attack, so roster order gives neither team a first strike.
     for (const attack of attacks) this.damage(attack.target, attack.amount, attack.attacker);
+    // Unlike gift buffs, like power is spent only while the team has an opponent in range.
+    if (s.likeBoosts)
+      for (const team of engaged) s.likeBoosts[team] = Math.max(0, s.likeBoosts[team] - dt);
     this.patrol.constrain(s.fighters, s.territory, s.round);
     const won = s.territory >= 0.9 ? 'red' : s.territory <= 0.1 ? 'blue' : null;
     if (won || s.remaining === 0) {

@@ -114,7 +114,7 @@ test('real socket → normalization → SQLite → authoritative HTTP/WS state; 
     }),
   );
   await vi.waitFor(() => expect(app.battle.state.fighters).toHaveLength(7));
-  expect(app.battle.state.boosts.red).toBeGreaterThan(14);
+  expect(app.battle.state.likeBoosts?.red).toBeGreaterThan(14);
   expect(app.battle.state.likes.red).toBe(1);
   const diagnostics = await (
     await fetch(url + 'admin/diagnostics', { headers: { Cookie: cookie } })

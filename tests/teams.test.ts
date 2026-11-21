@@ -66,7 +66,7 @@ describe('team battle rules', () => {
     battle.apply(gift('meteor'));
     expect(blue.hp).toBeCloseTo(100 - 55 / 4);
     battle.apply({ id: 'likes', type: 'like', viewer, count: 40 });
-    expect(battle.state.boosts.red).toBe(8);
+    expect(battle.state.likeBoosts?.red).toBe(8);
     red.hp = 40;
     battle.apply({ id: 'follow', type: 'follow', viewer });
     expect(red.hp).toBe(65);
@@ -120,4 +120,28 @@ describe('team battle rules', () => {
         .success,
     ).toBe(false);
   });
+});
+
+test('like power survives the wait and doubles the first hit, then wears off in combat', () => {
+  const battle = joined();
+  const [red, blue] = battle.state.fighters;
+  // Keep blue out of play long enough that the old four-second timer would have expired.
+  blue.hp = 0;
+  blue.respawn = 30;
+  battle.apply({ id: 'early-likes', type: 'like', viewer, count: 20 });
+  advance(battle, 9);
+  expect(battle.state.likeBoosts?.red).toBe(4);
+  expect(battle.state.boosts.red).toBe(0);
+
+  Object.assign(red, { x: 185, y: 320, cooldown: 0, maxHp: 1000, hp: 1000 });
+  Object.assign(blue, { x: 298, y: 320, cooldown: 0, maxHp: 1000, hp: 1000 });
+  battle.update(0.05);
+  expect(red.hp).toBe(988);
+  expect(blue.hp).toBe(976);
+  expect(battle.state.effects).toContainEqual(
+    expect.objectContaining({ type: 'shot', team: 'red', powered: true }),
+  );
+  expect(battle.state.likeBoosts?.red).toBeLessThan(4);
+  advance(battle, 6);
+  expect(battle.state.likeBoosts?.red).toBe(0);
 });

@@ -72,6 +72,7 @@ export interface BattleEffect {
   targetX?: number;
   targetY?: number;
   fighterId?: string;
+  powered?: boolean;
 }
 export interface BattleActivity {
   id: number;
@@ -90,6 +91,7 @@ export interface BattleState {
   scores: Record<Team, number>;
   shields: Record<Team, number>;
   boosts: Record<Team, number>;
+  likeBoosts?: Record<Team, number>;
   likes: Record<Team, number>;
   fighters: Fighter[];
   effects: BattleEffect[];
@@ -105,6 +107,8 @@ export const MAX_FIGHTERS = 100;
 // Leave room for gift allies. Registered viewers rotate fairly between rounds.
 export const MAX_ACTIVE_VIEWERS = 80;
 export const ROUND_SECONDS = 120;
+export const hasTeamPower = (state: BattleState, team: Team) =>
+  state.boosts[team] > 0 || (state.likeBoosts?.[team] ?? 0) > 0;
 export const GIFTS: Record<TeamGift, { name: string; description: string }> = {
   thanks: { name: 'Thank you', description: 'Cosmetic acknowledgement, no team required' },
   reinforce: { name: 'Reinforcements', description: 'Deploy 3 allies' },

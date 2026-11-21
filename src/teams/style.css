@@ -86,6 +86,14 @@ body:not(.team-admin) {
   letter-spacing: 2px;
   font-weight: 800;
 }
+.team-power {
+  margin-inline-start: 0.35em;
+  color: #ffdf86;
+  font-size: 0.85em;
+  font-style: normal;
+  letter-spacing: 0;
+  white-space: nowrap;
+}
 .score > b {
   font-size: 40px;
   font-weight: 800;

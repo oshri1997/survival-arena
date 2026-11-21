@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import {
+  hasTeamPower,
   WORLD,
   type BattleEffect,
   type BattleSnapshot,
@@ -241,8 +242,8 @@ export class TeamScene extends Phaser.Scene {
         h.strokeCircle(x, y, radius + 5);
       }
       actor.ring.setStrokeStyle(f.level >= 3 ? 4 : 3, color(f.team));
-      if (state.boosts[f.team] > 0) {
-        h.lineStyle(2, 0xffe38b, 0.8);
+      if (state.phase === 'battle' && hasTeamPower(state, f.team)) {
+        h.lineStyle(3, 0xffe38b, 0.95);
         h.strokeCircle(x, y, radius + 3);
       }
     }
@@ -310,14 +311,21 @@ export class TeamScene extends Phaser.Scene {
       if (e.type === 'shot') {
         const tx = this.mapX(e.targetX!),
           ty = this.mapY(e.targetY!);
-        const t = 1 - e.life / 0.35;
-        g.lineStyle(3, tint, alpha);
+        const t = 1 - e.life / 0.35,
+          tail = Math.max(0, t - (e.powered ? 0.32 : 0.2)),
+          headX = Phaser.Math.Linear(x, tx, t),
+          headY = Phaser.Math.Linear(y, ty, t);
+        g.lineStyle(e.powered ? 5 : 3, tint, alpha);
         g.lineBetween(
-          Phaser.Math.Linear(x, tx, Math.max(0, t - 0.2)),
-          Phaser.Math.Linear(y, ty, Math.max(0, t - 0.2)),
-          Phaser.Math.Linear(x, tx, t),
-          Phaser.Math.Linear(y, ty, t),
+          Phaser.Math.Linear(x, tx, tail),
+          Phaser.Math.Linear(y, ty, tail),
+          headX,
+          headY,
         );
+        if (e.powered) {
+          g.fillStyle(0xffe38b, alpha);
+          g.fillCircle(headX, headY, 3.5);
+        }
       } else if (e.type === 'meteor') {
         const t = 1 - e.life / 0.8,
           radius = (15 + t * 140) * Math.min(this.scale.width / 480, 1.3);

@@ -86,9 +86,9 @@ describe('audited game interaction cases', () => {
   ])('%i likes respect the threshold, remainder and duration cap', (count, boost, remainder) => {
     const b = arena();
     b.apply(like(count));
-    expect(b.state.boosts.red).toBe(boost);
+    expect(b.state.likeBoosts?.red ?? 0).toBe(boost);
     expect(b.state.likes.red).toBe(remainder);
-    expect(b.state.boosts.blue).toBe(0);
+    expect(b.state.likeBoosts?.blue ?? 0).toBe(0);
   });
   test('likes from team members combine; blue contributions stay separate', () => {
     const b = arena();
@@ -97,7 +97,7 @@ describe('audited game interaction cases', () => {
     b.apply(like(12));
     b.apply(like(8, second));
     b.apply(like(19, blue));
-    expect(b.state.boosts).toEqual({ red: 4, blue: 0 });
+    expect(b.state.likeBoosts).toEqual({ red: 4, blue: 0 });
     expect(b.state.likes).toEqual({ red: 0, blue: 19 });
   });
   test('likes never shorten a longer gift power and power does not multiply to quadruple damage', () => {

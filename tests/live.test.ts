@@ -131,7 +131,7 @@ describe('durable gift lifecycle and roster', () => {
         count: 101,
       }),
     ).toMatchObject({ accepted: true });
-    expect(battle.state.boosts.red).toBe(16);
+    expect(battle.state.likeBoosts?.red).toBe(16);
     expect(battle.state.likes.red).toBe(1);
     const first = new Set(battle.state.fighters.map((f) => f.ownerId));
     store.restart(battle);
