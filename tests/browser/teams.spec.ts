@@ -21,10 +21,10 @@ test('the live arena shows viewer interactions, then clears its roster and timer
   battle.resetSession();
   const waiting = { ...battle.state, live: 'waiting', connected: true, demoJoin: false };
   let endBroadcast: (() => void) | undefined;
-  let welcomeViewer: (() => void) | undefined;
+  let welcomeViewer: ((name: string, sequence: number) => void) | undefined;
   await page.routeWebSocket('**/api/teams/socket', (socket) => {
     socket.send(JSON.stringify({ type: 'state', state: active }));
-    welcomeViewer = () =>
+    welcomeViewer = (name, sequence) =>
       socket.send(
         JSON.stringify({
           type: 'state',
@@ -34,9 +34,9 @@ test('the live arena shows viewer interactions, then clears its roster and timer
             rallyLikes: { red: 50, blue: 0 },
             activity: [
               {
-                id: active.sequence + 2,
+                id: active.sequence + sequence,
                 kind: 'welcome',
-                name: '@red.viewer',
+                name,
                 text: 'Type RED or BLUE to join',
               },
               {
@@ -58,9 +58,20 @@ test('the live arena shows viewer interactions, then clears its roster and timer
   await expect(page.locator('#red-count')).toHaveText('1 players');
   await expect(page.locator('#clock')).toHaveText('4:00');
   const guide = page.locator('.gift-guide');
+  const callout = page.locator('.join-callout');
   await expect(guide.locator('li')).toHaveCount(10);
   await expect(page.getByRole('button', { name: /join (red|blue)/i })).toHaveCount(0);
-  await expect(page.locator('#chat-help')).toContainText('Chat red or blue to join');
+  await expect(callout).toContainText('Type RED or BLUE in TikTok chat to join the battle');
+  await expect(callout.locator('#join-callout-name')).toBeHidden();
+  await expect(callout).toBeInViewport({ ratio: 1 });
+  expect(
+    await callout.evaluate((element) => {
+      const bounds = element.getBoundingClientRect();
+      const scoreboard = document.querySelector('.team-scoreboard')!.getBoundingClientRect();
+      const gifts = document.querySelector('.gift-guide')!.getBoundingClientRect();
+      return bounds.top > scoreboard.bottom && bounds.bottom < gifts.top;
+    }),
+  ).toBe(true);
   await expect(guide.locator('ul')).toHaveCSS('background-color', 'rgba(15, 24, 43, 0.38)');
   expect(
     await guide.evaluate((panel) => {
@@ -77,10 +88,13 @@ test('the live arena shows viewer interactions, then clears its roster and timer
   expect(await guide.locator('ul').evaluate((list) => list.scrollHeight)).toBeLessThanOrEqual(
     await guide.locator('ul').evaluate((list) => list.clientHeight),
   );
-  welcomeViewer?.();
-  await expect(page.locator('#viewer-welcome')).toHaveText(
-    '@red.viewer · Type RED or BLUE to join',
-  );
+  welcomeViewer?.('@red.viewer', 2);
+  await expect(callout).toHaveClass('join-callout spotlight');
+  await expect(callout.locator('#join-callout-name')).toHaveText('@red.viewer');
+  await expect(callout.locator('#join-callout-name')).toBeVisible();
+  await expect(page.locator('#viewer-welcome')).toBeHidden();
+  welcomeViewer?.('@next.viewer', 3);
+  await expect(callout.locator('#join-callout-name')).toHaveText('@red.viewer');
   await expect(page.locator('#red-rally')).toHaveText('♥ 50/200');
   await expect(page.locator('#team-notice.gift')).toContainText('Gift Viewer sent meteor');
   await expect(page.locator('#team-notice.gift')).toContainText('No living opponents to hit');
@@ -101,11 +115,14 @@ test('the live arena shows viewer interactions, then clears its roster and timer
   await expect(guide.locator('ul')).toBeHidden();
   await guide.locator('summary').click();
   await expect(guide.locator('li').last()).toBeVisible();
+  await expect(callout.locator('#join-callout-name')).toBeHidden({ timeout: 6000 });
+  await expect(callout).toBeVisible();
   endBroadcast?.();
   await expect(page.locator('#mode')).toHaveText('WAITING FOR LIVE');
   await expect(page.locator('#red-count')).toHaveText('0 players');
   await expect(page.locator('#clock')).toHaveText('—');
   await expect(page.locator('.join-controls')).toBeHidden();
+  await expect(callout).toBeHidden();
 });
 
 test('networked team battle fills mobile screen; separate authenticated admin sends working events across browsers', async ({

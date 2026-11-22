@@ -15,7 +15,19 @@ import './style.css';
 import { Sound } from '../audio/Sound';
 
 document.getElementById('app')!.innerHTML =
-  `<main class="battle-screen"><div id="team-game" role="img" aria-label="Red and blue viewer avatars battle for territory"></div><header class="team-scoreboard"><div class="score red"><span>RED <i class="team-power" id="red-power" hidden>POWER ×2</i></span><b id="red-share">50<span>%</span></b><small id="red-count">0 players</small><small class="team-rally" id="red-rally" hidden></small></div><div class="round-info"><span id="mode">DEMO</span><b id="clock">${Math.floor(ROUND_SECONDS / 60)}:00</b><small id="round">ROUND 1</small></div><div class="score blue"><span>BLUE <i class="team-power" id="blue-power" hidden>POWER ×2</i></span><b id="blue-share">50<span>%</span></b><small id="blue-count">0 players</small><small class="team-rally" id="blue-rally" hidden></small></div><div class="territory-track"><i id="territory-red"></i></div></header><div id="team-result" class="team-result" hidden><span>ROUND COMPLETE</span><strong id="winner"></strong><small id="next-round"></small></div><footer class="arena-footer"><div id="team-notice" class="team-notice" role="status">Connecting to the arena…</div><span class="viewer-welcome" id="viewer-welcome" role="status" hidden></span><details class="gift-guide" open><summary>Gift effects</summary><ul id="gift-guide-items"></ul></details><div class="join-controls" hidden><small id="chat-help" hidden>Chat <b>red</b> or <b>blue</b> to join · <b>!power</b> for your next upgrade</small><details id="demo-join" class="demo-join" hidden><summary id="join-hint">Play demo</summary><div><button data-team="red" aria-label="Join red in demo">Red</button><button data-team="blue" aria-label="Join blue in demo">Blue</button></div></details></div></footer></main>`;
+  `<main class="battle-screen"><div id="team-game" role="img" aria-label="Red and blue viewer avatars battle for territory"></div><header class="team-scoreboard"><div class="score red"><span>RED <i class="team-power" id="red-power" hidden>POWER ×2</i></span><b id="red-share">50<span>%</span></b><small id="red-count">0 players</small><small class="team-rally" id="red-rally" hidden></small></div><div class="round-info"><span id="mode">DEMO</span><b id="clock">${Math.floor(ROUND_SECONDS / 60)}:00</b><small id="round">ROUND 1</small></div><div class="score blue"><span>BLUE <i class="team-power" id="blue-power" hidden>POWER ×2</i></span><b id="blue-share">50<span>%</span></b><small id="blue-count">0 players</small><small class="team-rally" id="blue-rally" hidden></small></div><div class="territory-track"><i id="territory-red"></i></div></header><div id="team-result" class="team-result" hidden><span>ROUND COMPLETE</span><strong id="winner"></strong><small id="next-round"></small></div><footer class="arena-footer"><div id="team-notice" class="team-notice" role="status">Connecting to the arena…</div><span class="viewer-welcome" id="viewer-welcome" role="status" hidden></span><details class="gift-guide" open><summary>Gift effects</summary><ul id="gift-guide-items"></ul></details><div class="join-controls" hidden><small id="chat-help" hidden>Chat <b>!power</b> for your next upgrade</small><details id="demo-join" class="demo-join" hidden><summary id="join-hint">Play demo</summary><div><button data-team="red" aria-label="Join red in demo">Red</button><button data-team="blue" aria-label="Join blue in demo">Blue</button></div></details></div></footer></main>`;
+const arena = document.querySelector<HTMLElement>('.battle-screen')!;
+const joinCallout = document.createElement('div');
+joinCallout.className = 'join-callout';
+joinCallout.hidden = true;
+joinCallout.setAttribute('role', 'status');
+joinCallout.innerHTML = `<span id="join-callout-name" class="join-callout-name" dir="auto" hidden></span>
+  <div class="join-callout-line"><span id="join-callout-command">Type</span>
+    <b class="join-callout-red">RED</b> <span>or</span> <b class="join-callout-blue">BLUE</b>
+  </div>
+  <span id="join-callout-help" class="join-callout-help">in TikTok chat to join the battle</span>`;
+arena.insertBefore(joinCallout, arena.querySelector('.team-result'));
+const joinCalloutName = document.getElementById('join-callout-name')!;
 const giftGuide = document.getElementById('gift-guide-items')!;
 let displayedGiftOverrides = '';
 function renderGiftGuide(overrides: BattleSnapshot['giftOverrides'] = {}) {
@@ -39,6 +51,10 @@ function renderGiftGuide(overrides: BattleSnapshot['giftOverrides'] = {}) {
 }
 renderGiftGuide();
 const localDemo = document.body.dataset.demo === 'local';
+if (localDemo) {
+  document.getElementById('join-callout-command')!.textContent = 'Pick';
+  document.getElementById('join-callout-help')!.textContent = 'in Play demo to join the battle';
+}
 const client = localDemo ? new LocalDemo() : new TeamClient();
 const sound = new Sound();
 const unlockAudio = () => sound.unlock();
@@ -85,15 +101,33 @@ const demoTeamButtons = demoJoin.querySelectorAll<HTMLButtonElement>('[data-team
 let activity = 0,
   noticeUntil = 0,
   giftNoticeUntil = 0,
-  welcomeUntil = 0;
+  powerUntil = 0,
+  spotlightUntil = 0,
+  nextSpotlight = 0;
+let showJoinCallout = false;
 let ownViewerId: string | undefined;
 let waitingForTeam: Team | undefined;
-const clearWelcome = () => {
+const clearPower = () => {
   viewerWelcome.hidden = true;
-  welcomeUntil = 0;
+  powerUntil = 0;
+};
+const clearSpotlight = () => {
+  joinCallout.classList.remove('spotlight');
+  joinCalloutName.hidden = true;
+  joinCalloutName.textContent = '';
+  spotlightUntil = 0;
 };
 client.onState((state) => {
   const waiting = state.live === 'waiting';
+  const now = Date.now();
+  const newFrame = document.body.dataset.connected !== 'true';
+  const wasShowingCallout = showJoinCallout;
+  showJoinCallout = state.live === 'live' || localDemo;
+  joinCallout.hidden = !showJoinCallout || state.phase === 'result';
+  if (!showJoinCallout || newFrame) {
+    clearSpotlight();
+    nextSpotlight = 0;
+  }
   renderGiftGuide(state.giftOverrides);
   document.body.dataset.connected = 'true';
   document.body.dataset.phase = state.paused ? 'paused' : state.phase;
@@ -141,7 +175,7 @@ client.onState((state) => {
   if (demoJoin.hidden) demoJoin.open = false;
   if (waiting) {
     noticeUntil = giftNoticeUntil = 0;
-    clearWelcome();
+    clearPower();
     document.getElementById('team-notice')!.hidden = true;
   }
   document.getElementById('team-result')!.hidden = state.phase !== 'result';
@@ -156,14 +190,22 @@ client.onState((state) => {
   const recent = state.activity.filter((item) => item.id > activity);
   if (!recent.length) return;
   activity = recent[0].id;
-  const now = Date.now();
   const viewerPrompt = (item: (typeof recent)[number]) =>
     item.kind === 'welcome' || item.kind === 'power';
-  const arrival = recent.find(viewerPrompt);
-  if (arrival && !waiting) {
-    viewerWelcome.textContent = `${arrival.name} · ${arrival.text}`;
+  const arrival = recent.find((item) => item.kind === 'welcome');
+  // Keep one name legible through join bursts and skip old welcomes when mounting/reconnecting.
+  if (arrival && wasShowingCallout && !newFrame && !joinCallout.hidden && now >= nextSpotlight) {
+    joinCalloutName.textContent = arrival.name;
+    joinCalloutName.hidden = false;
+    joinCallout.classList.add('spotlight');
+    spotlightUntil = now + 4600;
+    nextSpotlight = now + 6500;
+  }
+  const power = recent.find((item) => item.kind === 'power');
+  if (power && !waiting) {
+    viewerWelcome.textContent = `${power.name} · ${power.text}`;
     viewerWelcome.hidden = false;
-    welcomeUntil = now + 4000;
+    powerUntil = now + 4000;
   }
   const gift = recent.find((item) => item.kind === 'gift');
   const latest = gift ?? recent.find((item) => !viewerPrompt(item));
@@ -215,12 +257,15 @@ demoTeamButtons.forEach((button) =>
 );
 const monitor = setInterval(() => {
   const notice = document.getElementById('team-notice')!;
-  if (welcomeUntil && Date.now() > welcomeUntil) clearWelcome();
+  const now = Date.now();
+  if (powerUntil && now >= powerUntil) clearPower();
+  if (spotlightUntil && now >= spotlightUntil) clearSpotlight();
   if (!client.connected) {
+    joinCallout.hidden = true;
     notice.hidden = false;
     notice.textContent = 'Reconnecting to the arena…';
     document.body.dataset.connected = 'false';
-  } else if (Date.now() > noticeUntil) notice.hidden = true;
+  } else if (now > noticeUntil) notice.hidden = true;
 }, 300);
 if (import.meta.hot)
   import.meta.hot.dispose(() => {

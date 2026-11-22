@@ -165,6 +165,81 @@ body:not(.team-admin) {
   background: #ff6c87;
   transition: width 0.25s;
 }
+.join-callout {
+  position: absolute;
+  top: max(24%, calc(env(safe-area-inset-top) + 112px));
+  left: 50%;
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: min(84%, 520px);
+  display: grid;
+  justify-items: center;
+  gap: 5px;
+  padding: 8px clamp(10px, 3vw, 26px);
+  border: 1px solid #b9d8ff59;
+  border-radius: 14px;
+  background: linear-gradient(105deg, #361a30eb, #10192aef 48%, #112b45eb);
+  box-shadow: 0 5px 20px #080e2266;
+  color: #fff;
+  z-index: 2;
+  pointer-events: none;
+}
+.join-callout-line {
+  display: flex;
+  align-items: center;
+  gap: clamp(5px, 1.4vw, 12px);
+  font-size: clamp(12px, 2.5vw, 20px);
+  font-weight: 800;
+}
+.join-callout-line b {
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: clamp(19px, 5.3vw, 35px);
+  font-weight: 800;
+  line-height: 1.18;
+}
+.join-callout-red {
+  background: #9b294b;
+  box-shadow: inset 0 0 0 1px #ff6784;
+}
+.join-callout-blue {
+  background: #195b91;
+  box-shadow: inset 0 0 0 1px #57bfff;
+}
+.join-callout-help {
+  color: #e0eaf9;
+  font-size: clamp(11px, 2.4vw, 17px);
+  text-align: center;
+}
+.join-callout-name {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #ffe7aa;
+  font-size: clamp(17px, 4.2vw, 26px);
+  font-weight: 800;
+}
+.join-callout.spotlight {
+  border-color: #ffd990;
+  box-shadow:
+    0 0 22px #ffd99069,
+    0 6px 22px #080e228c;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .join-callout.spotlight {
+    animation: join-spotlight 420ms cubic-bezier(0.2, 0.75, 0.42, 1.12) both;
+  }
+}
+@keyframes join-spotlight {
+  from {
+    transform: translate(-50%, -8px) scale(0.91);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
 .arena-footer {
   position: absolute;
   inset-inline: max(12px, env(safe-area-inset-left)) max(12px, env(safe-area-inset-right));

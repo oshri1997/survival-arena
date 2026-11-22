@@ -15,6 +15,8 @@ EULER_API_KEY=your_provider_key
 
 This configuration can test real chat, likes and follows. Set `TIKTOK_CREATOR_ID` to the broadcaster's numeric user ID before testing real gifts. The collector ignores gifts until the recipient check can run. Leave the variables unset for a simulated game. Euler access, account permissions and quotas are separate from Railway hosting.
 
+The on-screen invitation explains how to join even when a viewer arrival event is missing. Arrival events for viewers who have yet to choose a team briefly highlight the viewer's handle when available. The collector receives TikTok chat and displays the invitation in the arena. Publishing inside TikTok LIVE requires a separate [Euler authorization with the `webcast:chat` scope](https://www.eulerstream.com/docs/oauth/scopes#webcastchat) and access to the [Send room chat route](https://www.eulerstream.com/docs/api/tiktok-live-rooms#send-room-chat) under Euler's [Premium Webcast Routes](https://www.eulerstream.com/pricing). The documented request takes plain text, with no separate field for a native mention.
+
 Use a fresh persistent state volume, `TEAM_DEMO_JOIN=false`, `TEAM_SEED_DEMO=false` and automatic demo events OFF for real broadcasts. The collector runs independently of the broadcaster’s computer/phone. It is attached to a username’s LIVE room, so it can receive events while that account broadcasts from either device. **Showing the game video inside a phone LIVE still needs an approved screen-sharing/broadcast workflow available to that account.** Receiving chat/gifts on the server does not inject a browser source into the TikTok phone app.
 
 ## Events and mapping
