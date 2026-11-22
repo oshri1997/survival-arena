@@ -1,0 +1,13 @@
+FROM node:24-bookworm-slim
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+RUN npm ci --include=dev
+COPY . .
+RUN npm run build && mkdir -p /app/data
+
+ENV NODE_ENV=production PORT=8787 TEAM_STATE_PATH=/app/data/teams.sqlite
+EXPOSE 8787
+
+# The Railway volume replaces /app/data at runtime. Make it writable before dropping privileges.
+CMD ["sh", "-ec", "chown node:node /app/data && exec setpriv --reuid=node --regid=node --init-groups node --import tsx server/index.ts"]
